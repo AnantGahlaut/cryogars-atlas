@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#081216">
+<meta name="description" content="Explore the SnowEx archive with CryoGARS. Eight field sites, LiDAR terrain and snow depth, and UAVSAR observations in interactive 3D.">
+<title>SnowEx Field Atlas · CryoGARS</title>
+<style>
+:root{color-scheme:dark;--bg:#081216;--panel:#0d1a1e;--line:#293c40;--ink:#edf3ec;--muted:#a2b5b5;--accent:#a6e2cc;--yellow:#dbe8aa;--mono:Consolas,"SFMono-Regular",monospace;--sans:"Segoe UI",Arial,sans-serif}
+*{box-sizing:border-box}html{background:var(--bg);scroll-behavior:smooth}body{margin:0;color:var(--ink);font:16px/1.5 var(--sans);background:radial-gradient(ellipse at 83% 23%,#12313566,transparent 55%)}button,a{-webkit-tap-highlight-color:transparent}button{font:inherit}a{color:inherit}button,a,summary{touch-action:manipulation}button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--yellow);outline-offset:5px}button{cursor:pointer}.skip{position:absolute;left:20px;top:-80px;background:var(--accent);color:var(--bg);padding:12px;z-index:4}.skip:focus{top:20px}.shell{max-width:1560px;margin:auto;padding:0 4.3vw}.mono{font-family:var(--mono)}.topbar{min-height:94px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);gap:24px}.brand{text-decoration:none;display:flex;align-items:center;gap:13px;font-size:20px;font-weight:650;letter-spacing:.01em}.topnav{display:flex;align-items:center;gap:32px;font-size:14px}.topnav a{text-decoration:none;color:var(--muted)}.topnav a:hover{color:var(--accent)}.edition{font:12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:flex;gap:9px;align-items:center}.edition:before{content:"";width:6px;height:6px;background:var(--accent);border-radius:50%}.intro{padding:44px 0 34px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px}.eyebrow{font:12px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 15px}.intro h1{font-weight:450;font-size:clamp(42px,5.4vw,80px);line-height:1.02;letter-spacing:-.065em;margin:0}.intro h1 em{font-style:normal;color:var(--accent);font-weight:300}.intro p:not(.eyebrow){color:var(--muted);margin:18px 0 0;max-width:560px}.archive-counts{display:flex;gap:38px;margin:0 0 3px;padding:0;flex-shrink:0}.archive-counts div{border-left:1px solid var(--line);padding-left:22px}.archive-counts dt{color:var(--muted);font:12px var(--mono);margin-top:7px}.archive-counts dd{font-size:34px;line-height:1;margin:0;letter-spacing:-.04em}.workbench{display:grid;grid-template-columns:320px minmax(0,1fr);border:1px solid var(--line);background:#0a1619;min-height:610px}.directory{border-right:1px solid var(--line);background:#091316}.section-label{padding:18px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);font:12px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.section-label span:last-child{color:var(--accent)}.site-list{list-style:none;padding:0;margin:0}.site-row{position:relative;display:flex;border-bottom:1px solid #203237}.site-row:last-child{border-bottom:0}.site-select{border:0;background:transparent;color:var(--ink);width:100%;text-align:left;display:flex;align-items:center;gap:13px;padding:16px 16px 16px 20px;min-height:69px;transition:background .2s;position:relative}.site-select:hover{background:#14282b}.site-select[aria-pressed=true]{background:#183331;box-shadow:inset 3px 0 var(--accent)}.site-number{font:12px var(--mono);color:var(--muted);align-self:flex-start;margin-top:3px}.site-label{flex:1}.site-label strong{display:block;font-size:15px;font-weight:500;line-height:1.25}.site-label>span{display:block;font:12px var(--mono);color:var(--muted);margin-top:6px}.selected-mark{color:var(--accent);display:none}.site-select[aria-pressed=true] .selected-mark{display:inline}.site-open{width:34px;flex-shrink:0;display:flex;justify-content:center;align-items:center;color:var(--muted);text-decoration:none;border-left:1px solid #203237}.site-open:hover{background:#22403c;color:var(--ink)}.detail{position:relative;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(ellipse at 55% 45%,#123033aa,transparent 64%)}.detail-head{display:flex;justify-content:space-between;align-items:start;padding:25px 30px 0;gap:20px;z-index:1}.detail-head .eyebrow{margin-bottom:7px}.detail-head h2{font-size:clamp(24px,2.7vw,38px);font-weight:400;letter-spacing:-.04em;line-height:1.2;margin:0}.preview-label{font:12px/1.6 var(--mono);color:var(--muted);text-align:right;max-width:175px}.preview-label span{color:var(--accent)}.terrain-stage{position:relative;flex:1;min-height:325px;margin:0 12px}.terrain-stage:before,.terrain-stage:after{content:"";position:absolute;width:14px;height:14px;border-color:#416565;border-style:solid;pointer-events:none}.terrain-stage:before{left:18px;top:20px;border-width:1px 0 0 1px}.terrain-stage:after{right:18px;bottom:20px;border-width:0 1px 1px 0}canvas{display:block;width:100%;height:100%;position:absolute;inset:0}.terrain-caption{position:absolute;bottom:18px;left:18px;display:flex;flex-direction:column;gap:5px;font:12px var(--mono);color:var(--muted);pointer-events:none}.terrain-caption b{font-weight:400;color:var(--accent)}.north{position:absolute;right:22px;top:24px;font:12px var(--mono);color:var(--muted)}.north span{display:block;color:var(--accent);font-size:23px;line-height:1}.preview-error{position:absolute;inset:40% 15% auto;text-align:center;color:var(--muted)}.detail-bottom{padding:0 30px 24px}.summary{border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr 1fr;margin:0;padding:17px 0;gap:16px}.summary dt{font:12px var(--mono);color:var(--muted);margin-bottom:4px}.summary dd{font:16px var(--mono);margin:0}.launch-row{display:flex;align-items:center;justify-content:space-between;gap:18px}.data-note{font:12px/1.65 var(--mono);color:var(--muted);max-width:310px;margin:0}.launch{display:flex;justify-content:space-between;align-items:center;gap:28px;background:var(--accent);color:#0b2420;text-decoration:none;padding:14px 20px;font-size:16px;font-weight:600;transition:background .2s;flex-shrink:0}.launch:hover{background:#c0f2df}.launch span{font-size:23px;line-height:1}.archive-note{display:flex;align-items:center;justify-content:space-between;padding:16px 0 24px;gap:20px;font:12px var(--mono);color:var(--muted)}.archive-note p{margin:0}.archive-note strong{color:var(--accent);font-weight:400}.about{border-top:1px solid var(--line);padding:22px 0 30px}.about summary{cursor:pointer;font-size:14px;color:var(--muted);width:fit-content}.about-copy{display:grid;grid-template-columns:1fr 1fr;gap:48px;padding-top:22px;max-width:1100px}.about-copy h3{font-size:16px;font-weight:500;margin:0 0 8px}.about-copy p{margin:0;color:var(--muted)}.about-copy .mono{font-size:12px;margin-top:13px;line-height:1.7}footer{border-top:1px solid var(--line);padding:20px 0 30px;display:flex;justify-content:space-between;gap:20px;color:var(--muted);font:12px var(--mono)}footer span:last-child{color:var(--accent)}noscript p{padding:20px;background:var(--panel)}[hidden]{display:none!important}
+.archive-counts div{display:flex;flex-direction:column}.archive-counts dt{order:2}.archive-counts dd{order:1}.data-note{white-space:pre-line}
+/* The supplied square PNG has transparent padding above/below its wordmark.
+   Frame only that padding; retain the artwork's proportions and original bytes. */
+.brand-logo-frame{display:block;position:relative;overflow:hidden;width:clamp(128px,12vw,168px);aspect-ratio:2.5;flex-shrink:0}
+.brand-logo{position:absolute;left:0;top:0;display:block;width:100%;height:100%;object-fit:contain;filter:invert(1);mix-blend-mode:screen;opacity:.94}
+.brand-context{border-left:1px solid var(--line);padding-left:16px;font:12px/1.6 var(--mono);letter-spacing:.1em;color:var(--muted)}
+.orbit-toggle{display:block;margin:10px 0 0 auto;border:1px solid var(--line);background:#0d1a1e;color:var(--accent);padding:8px 12px;min-height:40px;font-size:14px}
+.orbit-toggle:hover{border-color:var(--accent);background:#183331}
+.terrain-caption{bottom:18px;line-height:1.5;max-width:calc(100% - 36px)}
+.terrain-caption .available-resolution{color:var(--muted)}
+.north span{transform-origin:center;will-change:transform}
+@media(max-width:720px){.brand-context{display:none}}
+@media(max-width:540px){.topbar{flex-wrap:wrap;padding:15px 0;gap:14px}.topnav{width:100%;justify-content:space-between}}
+@media(min-width:1550px){.shell{padding:0 64px}.terrain-stage{min-height:385px}}
+@media(max-width:1050px){.shell{padding:0 24px}.workbench{grid-template-columns:285px minmax(0,1fr)}.intro{padding-top:32px}.archive-counts{gap:22px}.detail-head{padding:22px 22px 0}.detail-bottom{padding:0 22px 22px}.launch-row{align-items:stretch;flex-direction:column}.launch{justify-content:space-between}.preview-label{max-width:125px}.summary{gap:9px}.summary dd{font-size:14px}.terrain-stage{min-height:285px}}
+@media(max-width:720px){.shell{padding:0 18px}.topbar{min-height:80px}.topnav{gap:16px}.topnav .edition{display:none}.brand{font-size:18px}.intro{display:block;padding:32px 0 26px}.intro h1{font-size:clamp(40px,9vw,62px)}.intro p:not(.eyebrow){font-size:16px}.archive-counts{margin-top:25px}.archive-counts div{padding-left:15px}.archive-counts dd{font-size:27px}.workbench{display:flex;flex-direction:column}.directory{border-right:0;border-bottom:1px solid var(--line)}.site-list{display:grid;grid-template-columns:1fr 1fr}.site-row{border-right:1px solid var(--line)}.site-select{padding:13px 10px;gap:8px;min-height:80px}.site-label strong{font-size:14px}.site-label>span{font-size:12px}.site-number,.selected-mark{display:none!important}.site-open{width:27px}.detail-head{padding:24px 18px 0}.detail-head h2{font-size:28px}.preview-label{font-size:12px}.terrain-stage{min-height:330px;margin:0}.detail-bottom{padding:0 18px 20px}.summary{grid-template-columns:1fr 1fr;gap:12px}.summary div:last-child{grid-column:1/-1}.launch-row{gap:16px}.archive-note{align-items:start;flex-direction:column;gap:7px}.about-copy{grid-template-columns:1fr;gap:24px}footer{flex-direction:column;gap:8px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#field-sites">Skip to field sites</a>
+<div class="shell">
+<header class="topbar">
+  <a class="brand" href="index.html" aria-label="CryoGARS SnowEx Field Atlas home"><span class="brand-logo-frame"><img class="brand-logo" src="__LOGO_DATA_URI__" alt="CryoGARS" width="2681" height="1059"></span><span class="brand-context" aria-hidden="true">SNOWEX<br>ARCHIVE</span></a>
+  <nav class="topnav" aria-label="Main"><a href="#field-sites">Field sites</a><a href="#about">About the archive</a><span class="edition">Research preview</span></nav>
+</header>
+<main>
+  <section class="intro" aria-labelledby="title">
+    <div><p class="eyebrow">LiDAR / UAVSAR &nbsp; · &nbsp; Western United States</p><h1 id="title">SnowEx <em>Field Atlas.</em></h1><p>Explore the terrain. Inspect the observations.<br>A shared view of snow, from the ground to the radar.</p></div>
+    <dl class="archive-counts"><div><dt>FIELD SITES</dt><dd>__COUNT__</dd></div><div><dt>VIEWABLE LAYERS</dt><dd>__LAYERS__</dd></div></dl>
+  </section>
+  <section class="workbench" id="field-sites" aria-label="Choose a field site">
+    <div class="directory"><div class="section-label"><span>Site directory</span><span>__COUNT__ locations</span></div><ul class="site-list">__ROWS__</ul></div>
+    <section class="detail" id="site-detail" aria-labelledby="site-name">
+      <header class="detail-head"><div><p class="eyebrow" id="site-region">FIELD SITE / 01</p><h2 id="site-name">__FIRST_NAME__</h2></div><div class="preview-label">DEM elevation<br><span>Terrain preview</span><button type="button" class="orbit-toggle" id="orbit-toggle" hidden>Pause rotation</button></div></header>
+      <div class="terrain-stage"><canvas id="terrain" role="img" aria-label="Downsampled elevation preview of the selected site"></canvas><div class="north" aria-hidden="true"><span id="north-arrow">↑</span>N</div><div class="terrain-caption"><b id="terrain-range"></b><span class="available-resolution" id="available-resolution"></span><span id="terrain-resolution"></span></div><p class="preview-error" id="preview-error" hidden>Terrain preview unavailable. You can still open the full explorer.</p></div>
+      <div class="detail-bottom"><dl class="summary"><div><dt>Scientific layers</dt><dd id="layer-count">—</dd></div><div><dt title="Finest stored common grid; source instrument resolution varies">Archive grid (finest)</dt><dd id="archive-resolution">—</dd></div><div><dt>Explorer page</dt><dd id="page-size">—</dd></div></dl><div class="launch-row"><p class="data-note" id="data-note">Standalone 3D explorer.<br>Choose a site to inspect its archive.</p><a class="launch" id="launch" href="__FIRST_FILE__">Open 3D explorer <span aria-hidden="true">↗</span></a></div></div>
+    </section>
+  </section>
+  <noscript><p>Site previews need JavaScript. Use the ↗ link beside any site to open its explorer.</p></noscript>
+  <div class="archive-note"><p><strong>One 3 m reference grid per site.</strong><br>Same row, same column, same mapped location.</p><p>Standalone exports &nbsp; / &nbsp; __TOTAL_MIB__ MiB combined</p></div>
+  <details class="about" id="about"><summary>About this archive &amp; the display data</summary><div class="about-copy"><div><h3>Different observations. Matching pixels.</h3><p>Each site’s LiDAR-based DEM defines a shared 3 m reference grid. All co-registered science rasters—terrain, snow depth, vegetation and UAVSAR—use the same coordinate system, pixel centres and array shape within that site. Matching row and column indices therefore refer to the same mapped location. Coverage and acquisition dates can differ; in-situ measurements remain point records. Open the DEM’s info panel for its original download, site-specific grid and resampling equation.</p><p class="mono">Current scope: data exploration for snow-depth research. NISAR integration and snow-water-equivalent products are future work.</p></div><div><h3>A preview, not the full-resolution archive.</h3><p>These entrance-page terrains are sampled from the existing exported DEMs, with 2× vertical exaggeration. Colours are illustrative elevation shading. The archive grid is the finest stored common grid, not the native resolution of every instrument. The explorer terrain and this lightweight preview are sampled more coarsely; radar colour layers may be coarser still. Use the HDF5 archive for full-resolution analysis.</p><p class="mono" id="site-metadata"></p></div></div></details>
+</main>
+<footer><span>CryoGARS &nbsp; / &nbsp; SnowEx research archive</span><span>LiDAR + UAVSAR &nbsp; · &nbsp; __COUNT__ field sites</span></footer>
+</div>
+<script id="sites" type="application/json">__SITES__</script>
+<script>
+"use strict";
+const sites=JSON.parse(document.getElementById("sites").textContent);
+const $=id=>document.getElementById(id), canvas=$("terrain"), ctx=canvas.getContext("2d");
+let active=0,orbitAngle=-.57,terrainModel=null;
+const motionPreference=window.matchMedia?window.matchMedia("(prefers-reduced-motion: reduce)"):null;
+let rotateEnabled=!motionPreference?.matches,previewVisible=true,animationId=null,lastFrame=null;
+const ORBIT_SPEED=2*Math.PI/300,FRAME_INTERVAL=1000/30;
+const fmt=n=>Number(n).toLocaleString("en-US");
+function selectSite(index){
+  active=index;const s=sites[index],t=s.terrain;
+  document.querySelectorAll(".site-select").forEach((b,i)=>b.setAttribute("aria-pressed",String(i===index)));
+  $("site-name").textContent=s.name;$("site-region").textContent=`${s.region} / SITE ${String(index+1).padStart(2,"0")}`;
+  $("layer-count").textContent=fmt(s.layers);$("archive-resolution").textContent=`${s.res_m} m`;
+  $("page-size").textContent=`${s.mib.toFixed(1)} MiB`;
+  $("launch").href=s.file;$("launch").setAttribute("aria-label",`Open ${s.name} 3D explorer`);
+  $("terrain-range").textContent=`${fmt(Math.round(t.lo))} — ${fmt(Math.round(t.hi))} m`;
+  $("available-resolution").textContent=`Archive grid ${fmt(s.res_m)} m · Finest explorer terrain ${fmt(s.mesh_m)} m`;
+  $("terrain-resolution").textContent=`This preview only: ${fmt(t.cell_m)} m sampling · 2× height`;
+  $("data-note").textContent=s.has_depth?"Terrain & LiDAR snow depth · UAVSAR\nSelf-contained, opens in your browser.":"Terrain · UAVSAR\nNo LiDAR snow-depth layer in this export.";
+  $("site-metadata").textContent=`${s.name} · ${s.res_m} m common archive grid, ${s.grid.map(fmt).join(" × ")} (rows × columns). Finest exported terrain ${s.mesh.map(fmt).join(" × ")} at ${s.mesh_m} m. Homepage preview sampling ${t.cell_m} m. ${fmt(s.groups)} groups / ${fmt(s.datasets)} datasets / ${fmt(s.attrs)} attributes. Explorer built ${s.generated}.`;
+  canvas.setAttribute("aria-label",`${s.name}: sampled DEM elevation, ${Math.round(t.lo)} to ${Math.round(t.hi)} metres, with 2× vertical exaggeration. Archive grid ${s.res_m} metres, finest explorer terrain ${s.mesh_m} metres, entrance preview sampling ${t.cell_m} metres.`);
+  terrainModel=buildTerrainModel(t);
+  drawTerrain();
+  syncOrbit();
+}
+function buildTerrainModel(t){
+  // Cache topology and colours once per selection, not on every orbit frame.
+  const longest=Math.max(t.w-1,t.h-1,1),top=(1<<t.bits)-1,physicalSpan=longest*t.cell_m;
+  const points=[];let radius=0,height=0;
+  for(let y=0;y<t.h;y++)for(let x=0;x<t.w;x++){
+    const q=t.q[y*t.w+x];if(!q){points.push(null);continue;}
+    const z=(q-1)/(top-1),px=(x-(t.w-1)/2)/longest,py=(y-(t.h-1)/2)/longest;
+    const elevation=z*(t.hi-t.lo)/physicalSpan*2;
+    points.push({px,py,z,elevation,x:0,y:0});
+    radius=Math.max(radius,Math.hypot(px,py));height=Math.max(height,elevation);
+  }
+  const faces=[];
+  for(let y=0;y<t.h-1;y++)for(let x=0;x<t.w-1;x++){
+    const a=points[y*t.w+x],b=points[y*t.w+x+1],c=points[(y+1)*t.w+x],d=points[(y+1)*t.w+x+1];
+    if(![a,b,c,d].every(Boolean))continue;
+    for(const vertices of [[a,b,c],[b,d,c]]){
+      const z=vertices.reduce((n,p)=>n+p.z,0)/3;
+      const light=Math.max(.65,Math.min(1.2,1+(vertices[0].z-vertices[2].z)*4));
+      const rgb=[24+z*100,65+z*111,67+z*91].map(v=>Math.round(v*light));
+      faces.push({vertices,cx:vertices.reduce((n,p)=>n+p.px,0)/3,
+        cy:vertices.reduce((n,p)=>n+p.py,0)/3,depth:0,
+        fill:`rgb(${rgb.join(",")})`,stroke:`rgba(169,230,204,${.08+z*.16})`});
+    }
+  }
+  return {points,faces,radius,height};
+}
+function drawTerrain(){
+  if(!ctx){$("preview-error").hidden=false;return;}
+  const box=canvas.getBoundingClientRect();
+  if(!box.width||!box.height)return;
+  const dpr=Math.min(window.devicePixelRatio||1,2),pixelW=Math.round(box.width*dpr),pixelH=Math.round(box.height*dpr);
+  if(canvas.width!==pixelW||canvas.height!==pixelH){canvas.width=pixelW;canvas.height=pixelH;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);const W=box.width,H=box.height;
+  ctx.clearRect(0,0,W,H);
+  const model=terrainModel,co=Math.cos(orbitAngle),si=Math.sin(orbitAngle);
+  if(!model||!model.faces.length){$("preview-error").hidden=false;return;}
+  $("preview-error").hidden=true;
+  // A fixed orbit envelope keeps scale/centre steady as the terrain rotates.
+  const scale=Math.min(Math.max(1,W-54)/Math.max(model.radius*2,.01),Math.max(1,H-108)/Math.max(model.radius*1.1+model.height,.01));
+  const ox=W/2,oy=(H-48+model.height*scale)/2-6;
+  for(const p of model.points)if(p){
+    p.x=ox+(p.px*co-p.py*si)*scale;
+    p.y=oy+((p.px*si+p.py*co)*.55-p.elevation)*scale;
+  }
+  $("north-arrow").style.transform=`rotate(${Math.atan2(si,co*.55)*180/Math.PI}deg)`;
+  // A projection grid is a visual frame, not a claim about coordinate ticks.
+  ctx.strokeStyle="#27464855";ctx.lineWidth=.6;
+  for(let j=-5;j<=5;j++){
+    const project=(x,y)=>[ox+(x*co-y*si)*scale,oy+(x*si+y*co)*.55*scale];
+    for(const ends of [[[j/10,-.5],[j/10,.5]],[[-.5,j/10],[.5,j/10]]]){
+      const a=project(...ends[0]),b=project(...ends[1]);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();
+    }
+  }
+  for(const f of model.faces)f.depth=f.cx*si+f.cy*co;
+  model.faces.sort((a,b)=>a.depth-b.depth);
+  for(const f of model.faces){
+    ctx.beginPath();ctx.moveTo(f.vertices[0].x,f.vertices[0].y);
+    ctx.lineTo(f.vertices[1].x,f.vertices[1].y);ctx.lineTo(f.vertices[2].x,f.vertices[2].y);ctx.closePath();
+    ctx.fillStyle=f.fill;ctx.fill();ctx.strokeStyle=f.stroke;ctx.lineWidth=.45;ctx.stroke();
+  }
+}
+function shouldOrbit(){return !!(ctx&&terrainModel?.faces.length&&rotateEnabled&&previewVisible&&!document.hidden);}
+function orbitFrame(now){
+  animationId=null;
+  if(!shouldOrbit()){lastFrame=null;return;}
+  if(lastFrame===null)lastFrame=now;
+  const elapsed=now-lastFrame;
+  if(elapsed>=FRAME_INTERVAL){
+    // Cap suspended/slow frames so resuming never produces a sudden spin.
+    orbitAngle=(orbitAngle+Math.min(elapsed,100)/1000*ORBIT_SPEED)%(2*Math.PI);
+    lastFrame=now;drawTerrain();
+  }
+  animationId=requestAnimationFrame(orbitFrame);
+}
+function syncOrbit(){
+  $("orbit-toggle").hidden=!ctx||!terrainModel?.faces.length;
+  $("orbit-toggle").textContent=rotateEnabled?"Pause rotation":"Rotate preview";
+  if(shouldOrbit()){
+    if(animationId===null){lastFrame=null;animationId=requestAnimationFrame(orbitFrame);}
+  }else{
+    if(animationId!==null)cancelAnimationFrame(animationId);
+    animationId=null;lastFrame=null;
+  }
+}
+$("orbit-toggle").addEventListener("click",()=>{rotateEnabled=!rotateEnabled;syncOrbit();});
+document.addEventListener("visibilitychange",syncOrbit);
+if(motionPreference){
+  const change=()=>{rotateEnabled=!motionPreference.matches;syncOrbit();};
+  if(motionPreference.addEventListener)motionPreference.addEventListener("change",change);
+  else if(motionPreference.addListener)motionPreference.addListener(change);
+}
+if("IntersectionObserver" in window)new IntersectionObserver(entries=>{
+  previewVisible=entries[entries.length-1].isIntersecting;syncOrbit();
+},{threshold:0}).observe(canvas.parentElement);
+document.querySelectorAll(".site-select").forEach((b,i)=>b.addEventListener("click",()=>selectSite(i)));
+if("ResizeObserver" in window)new ResizeObserver(drawTerrain).observe(canvas.parentElement);else window.addEventListener("resize",drawTerrain);
+selectSite(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<style id="nxc-style">
+  #nxc-open{position:absolute;left:calc(100% + 8px);bottom:0;padding:7px 11px;border:1px solid var(--hair-2);background:var(--panel);color:var(--ink-2);border-radius:4px;font:12px var(--ui);cursor:pointer;white-space:nowrap}
+  #nxc-open:hover{border-color:var(--live);color:var(--live)}
+  #nxc-panel{width:900px;max-width:calc(100vw - 32px);max-height:calc(100vh - 40px);padding:0;border:1px solid var(--hair-2);border-radius:6px;background:var(--panel);color:var(--ink);font:13px/1.5 var(--ui);box-shadow:0 18px 70px #0008;overflow:auto}
+  #nxc-panel::backdrop{background:#0007}
+  #nxc-panel header{display:flex;gap:12px;align-items:start;padding:18px 22px;border-bottom:1px solid var(--hair)}
+  #nxc-panel h2{font:500 21px var(--disp);margin:0 0 4px}
+  #nxc-panel header>div{flex:1}
+  #nxc-panel p{margin:5px 0 12px}
+  #nxc-panel .nxc-muted{color:var(--ink-3);font-size:12px;overflow-wrap:anywhere}
+  #nxc-panel .nxc-body{padding:18px 22px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}
+  #nxc-panel label{display:block;color:var(--ink-2);margin:0 0 13px}
+  #nxc-panel input:not([type=checkbox]),#nxc-panel select{display:block;width:100%;padding:9px;margin-top:5px;background:var(--deep);color:var(--ink);border:1px solid var(--hair-2);border-radius:4px;font:12px var(--ui);min-width:0}
+  #nxc-panel input[type=checkbox]{accent-color:var(--live);margin:0 7px 0 0}
+  #nxc-panel button{border:1px solid var(--hair-2);border-radius:4px;background:var(--panel-2);color:var(--ink-2);font:12px var(--ui);padding:8px 11px;cursor:pointer}
+  #nxc-panel button:disabled{opacity:.4;cursor:not-allowed}
+  #nxc-panel button[aria-pressed=true],#nxc-panel #nxc-run{border-color:var(--live);color:var(--live)}
+  #nxc-panel :focus-visible,#nxc-open:focus-visible{outline:2px solid var(--live);outline-offset:3px}
+  #nxc-panel #nxc-drop{padding:12px;border:1px dashed var(--hair-2);border-radius:4px;margin-bottom:13px}
+  #nxc-panel #nxc-drop.nxc-drag{border-color:var(--live)}
+  #nxc-panel .nxc-row{display:flex;gap:9px;flex-wrap:wrap;margin:10px 0}
+  #nxc-panel .nxc-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  #nxc-panel details{border-top:1px solid var(--hair);padding-top:10px;margin:12px 0}
+  #nxc-panel summary{cursor:pointer;color:var(--ink-2);margin-bottom:10px}
+  #nxc-panel .nxc-warning{border-left:2px solid var(--live);padding-left:10px;font-size:12px;color:var(--ink-2);white-space:pre-line;overflow-wrap:anywhere}
+  #nxc-panel #nxc-status{min-height:20px;color:var(--live);overflow-wrap:anywhere}
+  #nxc-panel #nxc-canvas{width:100%;max-height:330px;object-fit:contain;image-rendering:pixelated;background:var(--deep);border:1px solid var(--hair);display:block}
+  #nxc-panel #nxc-summary{font:12px/1.8 var(--mono);white-space:pre-line;overflow-wrap:anywhere}
+  #nxc-panel #nxc-key{height:10px;border:1px solid var(--hair-2);margin-top:12px;background:linear-gradient(90deg,#b42d1d,#f6f5f0,#1d5aa7)}
+  #nxc-panel #nxc-ticks{display:flex;justify-content:space-between;font:11px var(--mono);margin:5px 0 14px;color:var(--ink-2)}
+  #nxc-panel .nxc-export-style{border:1px solid var(--hair);border-radius:4px;padding:12px;margin:12px 0}
+  #nxc-panel .nxc-export-style legend{color:var(--live);font-size:12px;padding:0 5px}
+  #nxc-panel #nxc-range-label{color:var(--live);font-size:12px;margin:6px 0 12px}
+  #nxc-panel [hidden]{display:none!important}
+  #nxc-terrain{position:absolute;left:calc(100% + 8px);bottom:0;width:270px;padding:10px;border:1px solid var(--hair-2);border-radius:4px;background:var(--panel);color:var(--ink-2);font:12px/1.5 var(--ui);cursor:default}
+  #nxc-terrain[hidden]{display:none}
+  #nxc-terrain .nxc-row{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+  #nxc-terrain button{padding:6px 9px;background:var(--panel-2);border:1px solid var(--hair-2);border-radius:4px;color:var(--ink-2);font:12px var(--ui);cursor:pointer}
+  #nxc-terrain button[aria-pressed=true]{border-color:var(--live);color:var(--live)}
+  #nxc-terrain button:disabled{opacity:.4;cursor:not-allowed}
+  #nxc-terrain :focus-visible{outline:2px solid var(--live);outline-offset:2px}
+  #nxc-terrain-name{color:var(--live)}
+  #nxc-terrain-status{font-size:11px;color:var(--ink-3);margin-top:6px;overflow-wrap:anywhere}
+  #nxc-panel.nxc-inspect{position:absolute;inset:auto auto 12px 260px;width:350px;max-width:calc(100% - 272px);max-height:calc(100% - 24px);margin:0;z-index:30;box-shadow:0 8px 28px #0005}
+  #nxc-panel.nxc-inspect header{padding:12px}
+  #nxc-panel.nxc-inspect h2{font-size:17px}
+  #nxc-panel.nxc-inspect .nxc-body{display:block;padding:12px}
+  #nxc-panel.nxc-inspect #nxc-inputs{display:none}
+  #nxc-panel.nxc-inspect .nxc-warning{font-size:11px}
+  @media(max-width:820px){#nxc-terrain{left:0;bottom:calc(100% + 8px);width:236px}#nxc-panel.nxc-inspect{left:12px;max-width:calc(100% - 24px)}}
+  @media(max-width:720px){#nxc-panel .nxc-body{grid-template-columns:1fr}#nxc-open{left:auto;right:0;bottom:calc(100% + 6px)}}
+</style>
+<button id="nxc-open" type="button" aria-haspopup="dialog" aria-controls="nxc-panel" title="Compare a numeric GeoTIFF or another exported layer">Compare</button>
+<div id="nxc-terrain" role="group" aria-label="3D comparison controls" hidden>
+  <div id="nxc-terrain-name">Temporary comparison</div>
+  <div class="nxc-row"><button data-nxc-view="a" type="button" aria-label="Show reference A in 3D">A</button><button data-nxc-view="b" type="button" aria-label="Show comparison B in 3D">B</button><button data-nxc-view="difference" type="button" aria-label="Show difference B minus A in 3D">B − A</button></div>
+  <div class="nxc-row"><button id="nxc-terrain-style" type="button">Colours &amp; range</button><button id="nxc-terrain-export" type="button">Export PNG</button><button id="nxc-terrain-clear" type="button" title="Clear comparison and restore original layer" aria-label="Clear comparison">×</button></div>
+  <div id="nxc-terrain-status" role="status" aria-live="polite"></div>
+</div>
+<dialog id="nxc-panel" aria-labelledby="nxc-title">
+  <header><div><h2 id="nxc-title">Compare products</h2><span class="nxc-muted">Temporary, on-device comparison · original archive untouched</span></div><button id="nxc-close" type="button" aria-label="Close comparison panel">×</button></header>
+  <div class="nxc-body">
+    <section id="nxc-inputs" aria-label="Comparison inputs">
+      <label>Reference A<select id="nxc-reference"></select></label>
+      <p id="nxc-grid" class="nxc-muted"></p>
+      <label>Comparison B<select id="nxc-source"><option value="file">Your GeoTIFF (temporary)</option><option value="layer">Another layer in this site</option></select></label>
+      <div id="nxc-file-fields">
+        <div id="nxc-drop"><label>Drop a GeoTIFF here, or choose a file<input id="nxc-file" type="file" accept=".tif,.tiff,image/tiff"></label><p class="nxc-muted" id="nxc-file-info">Numeric rasters only. Nothing is uploaded.</p></div>
+        <label>Band<select id="nxc-band"><option value="0">1</option></select></label>
+        <label><input type="checkbox" id="nxc-confirm">B represents the same physical product and uses the units shown for A after the conversion below. For elevation, its vertical datum also matches.</label>
+        <details><summary>Alignment &amp; value conversion</summary>
+          <div class="nxc-fields"><label>Scale ×<input id="nxc-scale" type="number" step="any" value="1"></label><label>Offset +<input id="nxc-offset" type="number" step="any" value="0"></label></div>
+          <label>Nodata override (optional)<input id="nxc-nodata" type="number" step="any" placeholder="Use TIFF nodata tag"></label>
+          <label>Resampling<select id="nxc-method"><option value="nearest">Nearest cell centre</option><option value="bilinear">Bilinear cell centre</option></select></label>
+          <p class="nxc-muted">B = raw × scale + offset. Centre sampling is not area averaging; A is an exported block-mean preview. Categorical and circular products use nearest sampling.</p>
+          <label><input type="checkbox" id="nxc-approx">Allow an approximate horizontal datum transform (no datum-shift grids). Sub-metre alignment is not guaranteed.</label>
+        </details>
+      </div>
+      <label id="nxc-layer-field" hidden>Same-product layer<select id="nxc-layer"></select></label>
+      <div class="nxc-row"><button id="nxc-run" type="button">Compare B − A</button><button id="nxc-cancel" type="button" hidden>Cancel</button><button id="nxc-clear" type="button">Clear temporary data</button></div>
+      <p id="nxc-status" role="status" aria-live="polite"></p>
+    </section>
+    <section aria-label="Comparison result">
+      <p class="nxc-warning" id="nxc-warning">Exploratory comparison, not native-resolution validation. Website values are quantized; some layers are clipped. Only shared valid cells enter the difference and statistics.</p>
+      <div id="nxc-result" hidden>
+        <div class="nxc-row" role="group" aria-label="Displayed map"><button data-nxc-view="a" type="button">Reference A</button><button data-nxc-view="b" type="button">Comparison B</button><button data-nxc-view="difference" type="button" aria-pressed="true">B − A</button></div>
+        <details><summary>Flat PNG preview</summary><canvas id="nxc-canvas" aria-label="North-up numeric raster preview"></canvas></details>
+        <div id="nxc-key"></div><div id="nxc-ticks"></div>
+        <p id="nxc-range-label"></p>
+        <fieldset class="nxc-export-style"><legend>3D &amp; PNG colours</legend>
+          <label>Colour palette<select id="nxc-palette"></select></label>
+          <label><input id="nxc-reverse" type="checkbox">Reverse palette</label>
+          <div class="nxc-row" role="group" aria-label="Percentile presets">
+            <button data-nxc-range="0,100" type="button">Full range</button>
+            <button data-nxc-range="2,98" type="button">Robust 2–98%</button>
+            <button data-nxc-range="10,90" type="button">Detail 10–90%</button>
+          </div>
+          <div class="nxc-fields"><label>Lower percentile (%)<input id="nxc-percent-low" type="number" min="0" max="100" step="any" value="0"></label><label>Upper percentile (%)<input id="nxc-percent-high" type="number" min="0" max="100" step="any" value="100"></label></div>
+          <label id="nxc-zero-field"><input id="nxc-zero" type="checkbox" checked>Keep difference limits symmetric around zero</label>
+          <p class="nxc-muted">Colours only: tails saturate at the selected limits. No samples are removed and statistics stay unchanged. A/B share a colour range. Symmetric mode expands percentile bounds to ± the larger magnitude.</p>
+        </fieldset>
+        <p id="nxc-summary"></p>
+        <div class="nxc-row"><button id="nxc-show" type="button">Return to 3D</button><button id="nxc-export" type="button">Export 2D PNG</button></div>
+        <p class="nxc-muted">PNG map pixels match the analysis grid, independent of zoom or terrain detail. White/transparent cells contain no shared data. PNG follows the comparison's colours and range, including edits in the existing 3D legend, without terrain lighting.</p>
+      </div>
+      <details><summary>What the calculation means</summary><p class="nxc-muted">Linear products: Δ = B − A. Aspect: Δ = ((B − A + 180) mod 360) − 180 degrees. Wrapped phase: the same shortest signed difference with π and 2π. Masks: threshold each preview at 0.5, then subtract (−1 = lost usable, 0 = unchanged, +1 = gained usable). These mask previews can already contain averaged fractions.</p><p class="nxc-muted">Mean = ΣΔ/n; MAE = Σ|Δ|/n; RMSE = √(ΣΔ²/n). These describe disagreement, not accuracy unless A is appropriate ground truth. No vertical-datum conversion is performed. Scientific metadata, timestamps, and acquisition compatibility still need review.</p></details>
+    </section>
+  </div>
+</dialog>

@@ -1,0 +1,46 @@
+# Browser comparison: first version
+
+Open a site explorer, select a product, and choose **Compare** beside the bottom-left colour legend. The original controls, product notes, widget dimensions, and terrain renderer remain in place.
+
+1. Choose the reference **A**. Its exported data grid is fixed for the comparison; zoom/terrain LOD does not change it.
+2. Drag/select a numeric GeoTIFF as **B**, or select another same-product layer in that site.
+3. For TIFFs, choose a band and confirm the physical product, units, and matching vertical datum where relevant. Value conversion is explicitly **raw × scale + offset**. TIFF scale/offset metadata is not automatically applied; enter any required conversion yourself. Nodata comes from the TIFF tag or your override, not an assumed zero.
+4. Run **Compare B − A**. The setup dialog closes and the difference opens immediately on the existing 3D terrain. A compact control strip beside the original legend switches **A**, **B**, and **B − A** in one reusable temporary tab. Orbit, zoom, terrain detail, lighting, and existing widget dimensions are unchanged. All three maps show the same valid intersection; A and B share a colour range.
+5. Choose **Colours & range** in that strip. A compact, non-modal inspector opens, so the terrain remains interactive while you choose a built-in palette, the current reference-layer palette, or a saved custom palette. Reverse it if wanted. Choose **Full**, **Robust 2–98%**, **Detail 10–90%**, or enter custom lower/upper percentiles. The terrain, optional **Flat PNG preview**, and colour legend update immediately. New custom palettes can still be created with the existing main legend editor; the comparison does not change saved definitions.
+6. Percentiles are computed from finite shared cells using linearly interpolated sorted ranks. A/B use their combined distribution and share styling; the difference has separate settings. **Keep difference limits symmetric around zero** expands the selected limits to ± the larger magnitude and explicitly labels the result as zero-centred. Tails saturate at the displayed bounds; no samples are removed and comparison statistics do not change.
+   Percentile presets changed in the original 3D legend use that viewer's sampled terrain values instead; their labels identify the source map and sampled ranks. Built-in PNG colours follow the renderer's unlit colour functions, including cyclic palettes, rather than approximate UI swatches. Terrain lighting, wireframe brightening, and triangle interpolation are not part of the flat PNG.
+7. **Export PNG** is available directly in the 3D strip; **Export 2D PNG** is also in the inspector. It creates a north-up numeric raster figure with source paths/names, comparison direction, colour bar, palette name/reversal, percentile selection, CRS, grid origin, and actual analysis resolution. Each map cell becomes one image pixel; annotations add margins. It uses the comparison's colours and range, not a lit perspective screenshot. Edits in the existing 3D legend are read back before export or switching maps; manual numeric limits are labelled **Custom value limits**, not falsely presented as percentiles. A/B share those edits; difference styling remains separate.
+8. Comparison controls belong only to the temporary comparison tab. Selecting any ordinary layer, Details, or Timeline hides the strip and closes the inspector. A completed result stays in its own tab for an explicit return; it cannot display over the newly selected product. Choosing **Compare** on another layer starts fresh from that layer, with fresh TIFF/confirmation inputs and only same-product layer candidates. There is one temporary comparison session per explorer; starting a new one replaces the previous session.
+9. The strip's **×** (or **Clear temporary data** in setup) removes imported arrays/results and restores the original layer when comparison owns the scene. Closing a suspended comparison tab leaves the currently selected layer or flat tab untouched. Nothing is added to the HDF5 archive. Temporary preference entries are excluded when other viewer settings are saved. Page refresh/navigation discards the import. Switching explorer tabs, clearing, or changing inputs cancels pending imports/exports; delayed callbacks cannot reopen the old comparison or download an obsolete PNG.
+
+## Scientific limits
+
+- These are **exported website values**, not raw 3 m archive values. All current site layers use 8-bit quantization; some amplitude/magnitude layers also have clipped tails. The panel/export reports the reference quantization increment. Do not use these results as native-resolution model validation.
+- The reference grid uses its own `w`, `h`, and `cell_m` at the exported top-left edge. Cropped trailing rows/columns are not stretched to the original full extent. A cell centre is `x = left + (col + 0.5) × cell`, `y = top − (row + 0.5) × cell`.
+- TIFFs are centre-sampled using nearest or nodata-safe bilinear interpolation. **This is not area averaging.** Existing website values are block-mean previews. Differences between fine TIFF samples and coarse reference means can include sampling effects; matching area aggregation is a future scientific improvement.
+- Linear difference is `Δ = B − A`. Aspect and wrapped phase use the shortest signed angular difference. Mask previews are thresholded at 0.5 and compared as signed state transitions. Forest-cover fractions remain continuous.
+- Existing aspect direction and angle-averaging problems are **not corrected** by this tool. Wrapped phase preview averaging also limits interpretation. Warnings are shown and carried into relevant exports.
+- Where an explorer already supports circular terrain interpolation, temporary A/B aspect and phase retain that angular type. Signed difference maps remain scalar. The add-on does not replace an older explorer's renderer or correct its archived angles.
+- Statistics use only finite overlap. Mean/MAE/RMSE quantify disagreement, not accuracy unless A is appropriate truth. Dates, radar pair timing, product definitions, and vertical datums must be checked by the user.
+- No vertical-datum transformation is performed. Different horizontal datums are blocked unless an approximate transformation is explicitly accepted. No high-accuracy datum-shift grids are bundled.
+
+## Import support and limits
+
+The first TIFF image/IFD is used; a band can be selected within it. Real numeric 8/16/32/64-bit samples, affine georeferencing (including rotation), and PixelIsArea/PixelIsPoint are supported. RGB/paletted, complex, packed-bit, missing/ambiguous CRS, and non-affine georeferencing are rejected. Some codec/BigTIFF variants may be unsupported by the pinned reader; errors are shown rather than guessed around.
+
+Offline CRS conversions cover WGS84 geographic/Web Mercator/UTM, NAD83 geographic/UTM, and NAD83(2011) geographic/UTM zones used by these sites. Unsupported CRS inputs should be externally reprojected to the site's EPSG. Matching CRS coordinates need no transform.
+
+Limits: 4 GiB input file, 2 million output cells, 4 million cells per requested source window, 64 MiB per decoded tile/strip, and conservative 128 MiB decoded-block-plus-window and 128 MiB encoded-block batch budgets. These are operation limits, not a guaranteed total tab memory ceiling. Large striped TIFFs may need a tiled/cropped/overview copy. Imports are asynchronous and cancellable between reads; a synchronous codec cannot be interrupted mid-decode.
+
+The comparison code makes no network requests. GeoTIFF.js 2.1.3 and Proj4js 2.12.1 are embedded with licenses; source/version/checksum details are in `assets/vendor/README.md`. Existing optional web fonts elsewhere in the viewer are unchanged. API references: [GeoTIFF.js](https://geotiffjs.github.io/geotiff.js/) and [Proj4js](https://proj4js.org/).
+
+## Maintenance and verification
+
+- Source: `viewer_compare/` (numerical core, TIFF adapter, export, scoped panel, narrow bridge).
+- Safe additive installation: `python comparison_addon.py --rollout`. This uses existing HTML payloads, not HDF5. It stages/validates all eight pages, checks races, backs up originals, and preserves the original page after removal of the exact marked additions. It leaves `viewer/index.html` and `explorer_template.html` unchanged.
+- Future explorer builds include comparison via `refresh_explorers.render_explorer`. There is no need to rebuild terrain or enrichment just to install this feature.
+- Restore an individual backed-up `*_explorer.html` by copying it back into `viewer/`. Retain the backup manifest and source backup; do not delete the archive.
+- Tests: `node --test viewer_compare/test_*.js` and `python -m unittest test_explorer_addon test_make_index test_refresh_explorers test_comparison_addon`.
+- Real-data tests read the existing Grand Mesa export and one small 50 m ASO TIFF when available; they skip when those private data assets are absent.
+
+Automated local-browser navigation was blocked by the session's browser policy. Numerical tests, real-TIFF decoding/alignment, handler tests with a DOM/canvas harness, script syntax, and byte-preservation checks were run. **Actual browser visual/WebGL/download interaction still needs a manual check.**

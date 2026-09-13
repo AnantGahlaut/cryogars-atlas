@@ -1,0 +1,19 @@
+# Candidate environment, based on versions in the successful offline test run.
+# Fresh installation/solver verification is still a release-checklist item.
+name: snowex-atlas
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11.15
+  - numpy=2.4.6
+  - h5py=3.16.0
+  - rasterio=1.4.4
+  - scipy=1.17.1
+  - shapely=2.1.2
+  - pyproj=3.7.2
+  - affine=2.4.0
+  - requests=2.34.2
+  - pip
+  - pip:
+      - earthaccess==0.17.0
+      - asf-search==12.2.1

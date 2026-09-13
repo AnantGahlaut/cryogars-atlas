@@ -1,0 +1,256 @@
+<!-- Isolated logo and product notes. No existing widget CSS or app code is changed. -->
+<style id="nxn-style">
+  #nxn-logo{position:absolute;right:16px;bottom:18px;width:88px;height:35.2px;overflow:hidden;z-index:4;pointer-events:none;opacity:.65}
+  #nxn-logo img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;filter:invert(1);mix-blend-mode:screen}
+  body[data-theme="snowfield"] #nxn-logo img{filter:none;mix-blend-mode:multiply}
+  #nxn-trigger{position:absolute;left:calc(100% + 6px);top:8px;width:24px;height:24px;padding:0;display:grid;place-items:center;border:1px solid var(--hair-2);border-radius:50%;background:var(--panel);color:var(--ink-2);font:italic 15px Georgia,serif;cursor:pointer}
+  #nxn-trigger:hover,#nxn-trigger[aria-expanded="true"]{color:var(--live);border-color:var(--live)}
+  #nxn-panel{position:fixed;right:12px;top:52px;bottom:38px;width:380px;max-width:calc(100vw - 24px);z-index:75;display:flex;flex-direction:column;min-height:0;background:var(--panel);color:var(--ink);border:1px solid var(--hair-2);border-radius:4px;box-shadow:0 12px 32px #0004;font-family:var(--ui)}
+  #nxn-panel[hidden]{display:none!important;pointer-events:none}
+  #nxn-panel header{display:flex;align-items:start;gap:12px;flex:none;padding:18px;border-bottom:1px solid var(--hair)}
+  #nxn-panel header>div{flex:1;min-width:0}
+  #nxn-panel .nxn-eyebrow{font:11px var(--mono);color:var(--live);margin:0 0 7px}
+  #nxn-panel h2{font:500 20px/1.35 var(--disp);margin:0;overflow-wrap:anywhere}
+  #nxn-panel .nxn-site{font-size:12px;color:var(--ink-3);margin:6px 0 0}
+  #nxn-close{width:26px;height:26px;padding:0;flex:none;border:0;border-radius:3px;background:transparent;color:var(--ink-3);font:22px/1 var(--ui);cursor:pointer}
+  #nxn-close:hover{color:var(--ink);background:var(--panel-2)}
+  #nxn-content{padding:18px;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-color:var(--hair-2) transparent;font-size:14px;line-height:1.7}
+  #nxn-content p{margin:0 0 14px}
+  #nxn-content h3{font-size:13px;font-weight:500;color:var(--live);margin:21px 0 9px}
+  #nxn-content dl{margin:0}
+  #nxn-content dl>div{padding:9px 0;border-bottom:1px solid var(--hair)}
+  #nxn-content dt{font-size:12px;color:var(--ink-3)}
+  #nxn-content dd{margin:3px 0 0;font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+  #nxn-content .nxn-note{font-size:12px;color:var(--ink-3);margin-top:16px}
+  #nxn-content a{color:var(--live);text-underline-offset:3px}
+  #nxn-panel :focus-visible,#nxn-trigger:focus-visible{outline:2px solid var(--live);outline-offset:3px}
+</style>
+<style id="nxn-dem-style">
+  #nxn-content .nxn-grid-highlight{border-left:2px solid var(--live);padding:0 0 0 12px;color:var(--ink-2)}
+  #nxn-content .nxn-equation{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--panel-2);border:1px solid var(--hair);border-radius:3px;padding:12px;font:12px/1.85 var(--mono);color:var(--ink-2);margin:12px 0}
+  #nxn-content .nxn-source-links a{display:block;margin:7px 0;overflow-wrap:anywhere}
+  #nxn-content .nxn-dem-detail{border-top:1px solid var(--hair);margin:16px 0;padding-top:12px}
+  #nxn-content .nxn-dem-detail summary{color:var(--live);cursor:pointer;font-size:13px}
+  #nxn-content .nxn-dem-detail p{margin-top:12px;font-size:12px}
+</style>
+<div id="nxn-logo" aria-label="CryoGARS"><img src="data:image/jpeg;base64,__NXN_LOGO__" alt="CryoGARS" width="2681" height="1059"></div>
+<button id="nxn-trigger" type="button" aria-label="Open product notes" aria-controls="nxn-panel" aria-haspopup="dialog" aria-expanded="false" title="Product notes">i</button>
+<aside id="nxn-panel" role="dialog" aria-modal="false" aria-labelledby="nxn-title" hidden>
+  <header><div><p class="nxn-eyebrow">PRODUCT NOTES</p><h2 id="nxn-title">Elevation</h2><p class="nxn-site" id="nxn-site"></p></div><button type="button" id="nxn-close" aria-label="Close product notes">×</button></header>
+  <div id="nxn-content"></div>
+</aside>
+<script id="nxn-metadata" type="application/json">__NXN_METADATA__</script>
+<script id="nxn-script">
+(() => {
+  'use strict';
+  const el=id=>document.getElementById(id);
+  const panel=el('nxn-panel'),trigger=el('nxn-trigger'),logo=el('nxn-logo');
+  const info=el('info'),pathNode=el('iPath'),stage=el('stage');
+  if(!info||!pathNode||!stage){trigger.hidden=true;logo.hidden=true;return;}
+  const data=JSON.parse(el('nxn-metadata').textContent);
+  info.appendChild(trigger);
+  stage.appendChild(logo);
+  let current='';
+  const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const row=(label,value)=>value===undefined||value===null||value===''?'':
+    '<div><dt>'+escape(label)+'</dt><dd>'+escape(Array.isArray(value)?value.join(' → '):value)+'</dd></div>';
+  const sourceLink=(url,label)=>typeof url==='string'&&/^https:\/\/[^\s<>"']+$/i.test(url)?
+    '<a href="'+escape(url)+'" target="_blank" rel="noopener noreferrer">'+escape(label)+' ↗</a>':'';
+  const demSources={
+    SNEX20_QSI_DEM_3m:{
+      name:'SnowEx20–21 QSI LiDAR DEM, Version 1',
+      catalog:'https://nsidc.org/data/snex20_qsi_dem_3m/versions/1',
+      guide:'https://nsidc.org/data/documentation/snowex20-21-qsi-lidar-3m-utm-grid-dem-snow-depth-and-vegetation-height-version-1-user-guide',
+      description:'A bare-earth DEM supplied by the QSI airborne LiDAR collection.'},
+    SNEX_HRSI_SD_DEM_CO:{
+      name:'SnowEx HRSI Colorado DEM collection, Version 1',
+      catalog:'https://nsidc.org/data/snex_hrsi_sd_dem_co/versions/1',
+      guide:'https://nsidc.org/sites/default/files/documents/user-guide/snex_hrsi_sd_dem_co-v001-userguide.pdf',
+      description:'The selected Grand Mesa DTM is the LiDAR-derived snow-off reference terrain in the HRSI collection. It is distinct from the collection’s satellite-stereo snow-on DEMs.'},
+    LiDAR_Veg_Ht_Idaho_1532:{
+      name:'LiDAR-derived vegetation and DEM data, Idaho, Version 1',
+      catalog:'https://www.earthdata.nasa.gov/data/catalog/ornl-cloud-lidar-veg-ht-idaho-1532-1',
+      guide:'https://daac.ornl.gov/VEGETATION/guides/LiDAR_Veg_Ht_Idaho.html',
+      description:'The Reynolds Creek bare-earth LiDAR DEM from the ORNL DAAC Idaho collection, acquired in 2014. Its acquisition predates the SnowEx observations.'}
+  };
+  const isGrandMesaDTM=a=>a.source_dataset==='SNEX_HRSI_SD_DEM_CO'&&/GM_DTM_1m/.test(a.source_filename||'');
+  const hasGrandMesaProvenanceConflict=a=>isGrandMesaDTM(a)&&/satellite photogrammetry/i.test(a.source_note||'');
+  function demNotes(a){
+    const source=demSources[a.source_dataset],native=Number(a.source_native_resolution_m),spacing=Number(data.grid);
+    const isBilinear=String(a.resampling_method).toLowerCase()==='bilinear';
+    const hasOrigin=Array.isArray(data.origin)&&data.origin.length===2&&data.origin.every(Number.isFinite);
+    const hasShape=Array.isArray(data.shape)&&data.shape.length===2&&data.shape.every(Number.isFinite);
+    const equation=text=>'<pre class="nxn-equation">'+escape(text)+'</pre>';
+    const transition=native===spacing?
+      'Already '+spacing+' m at the source. This site does not undergo 1 m → 3 m downsampling: the source is aligned and cropped to the common archive grid.':
+      (native>0?'The '+native+' m source DEM is resampled onto this site’s '+spacing+' m archive grid.':'The source DEM is resampled onto this site’s '+spacing+' m archive grid; native spacing is not recorded.');
+    let text='<p>This is the terrain elevation reference for '+escape(data.site)+', not snow depth.</p>'+
+      '<h3>Original DEM source</h3><p>'+escape(source?source.description:'The source identifiers below are recorded in this export.')+'</p>'+
+      '<div class="nxn-source-links">'+(sourceLink(a.source_url,'Original GeoTIFF · Earthdata sign-in')||'<p class="nxn-note">No direct source URL is recorded for this DEM.</p>')+
+      (source?sourceLink(source.catalog,source.name)+sourceLink(source.guide,'Provider’s product guide'):'')+'</div>'+
+      (hasGrandMesaProvenanceConflict(a)?'<p class="nxn-note">Provenance correction: the archived note calls this DTM satellite photogrammetry. That conflicts with the provider’s DTM description (Table 2; §2.3). The original note is retained below; the HDF5 has not been edited.</p>':'')+
+      '<h3>One '+escape(spacing)+' m reference grid</h3><p class="nxn-grid-highlight"><strong>Same row. Same column. Same mapped location.</strong><br>All co-registered science rasters at this site—including snow depth, vegetation and UAVSAR—use this DEM-based grid: the same coordinate system, pixel centres and array shape.</p>'+
+      '<p>That aligns locations, not observation dates or native instrument resolution. Coverage and missing pixels can differ. In-situ observations remain point records; the browser uses coarser display grids.</p>'+
+      equation('x(r, c) = L + '+spacing+'(c + ½)\ny(r, c) = T − '+spacing+'(r + ½)')+
+      '<p class="nxn-note">r and c are zero-based row and column indices. L and T are the upper-left grid edges; x and y are pixel-centre coordinates in metres.</p><dl>'+
+      row('This site’s grid origin (L, T)',hasOrigin?data.origin.join(', ')+' m':null)+
+      row('Stored shape (rows × columns)',hasShape?data.shape.join(' × '):null)+
+      row('Grid coordinate system',data.epsg?'EPSG:'+data.epsg:null)+'</dl>'+
+      '<h3>Source → archive</h3><p>'+escape(transition)+'</p>';
+    if(isBilinear){
+      text+='<p>The pipeline uses Rasterio’s <code>reproject</code> with GDAL bilinear resampling, source nodata and the site’s destination transform.</p>'+
+        equation('K(t) = max(0, 1 − |t|)\nwᵢⱼ = K(αx(i − u)) K(αy(j − v))\nz′ = Σᵢⱼ(mᵢⱼ wᵢⱼ zᵢⱼ) / Σᵢⱼ(mᵢⱼ wᵢⱼ)')+
+        '<p class="nxn-note">zᵢⱼ is source elevation; mᵢⱼ is 1 for a valid source value and 0 for nodata. (u, v) is the destination centre mapped into source pixel-centre coordinates. αx and αy are GDAL’s sampling scales, capped at 1.</p>'+
+        '<details class="nxn-dem-detail"><summary>Kernel scale, missing data &amp; implementation</summary>'+
+        '<p>For axis-aligned grids in the same CRS, α = min(1, source spacing / target spacing). '+
+        (native>0?escape('For '+native+' m → '+spacing+' m, α = '+(native===spacing?'1':native===1&&spacing===3?'⅓':String(Math.min(1,native/spacing))))+'. ':'')+
+        'For a 3 m source aligned to the same 3 m pixel centres, this resampling step retains valid source values. Downsampling widens the kernel; it is not always a four-neighbour interpolation.</p>'+
+        (native===1&&spacing===3?'<p>For an interior, coincident centre with valid neighbours, 1 m → 3 m uses one-dimensional weights [1, 2, 3, 2, 1] / 9; the 2D weights are their outer product. This is not a 3 × 3 arithmetic mean. Reprojection can alter the sampling scale.</p>':'')+
+        '<p>The equation applies to eligible destination pixels. GDAL leaves a destination nodata when the source cell containing its mapped centre is invalid; other invalid neighbours carry zero weight. A zero denominator also yields nodata.</p>'+
+        '<p>Local implementation: <code>build_hdf5.py</code> → <code>ingest_lidar_granule</code> → <code>reproject_array</code>; <code>RESAMPLING["lidar"] = "bilinear"</code>. The grid is cropped to the site’s LiDAR science extent within the reference DEM bounds and snapped outward to the DEM origin by <code>derive_common_grid</code>.</p>'+
+        '<div class="nxn-source-links">'+sourceLink('https://rasterio.readthedocs.io/en/stable/api/rasterio.warp.html#rasterio.warp.reproject','Rasterio reproject reference')+
+        sourceLink('https://gdal.org/en/stable/programs/gdalwarp.html#nodata-source-validity-mask-handling','GDAL nodata rules')+
+        sourceLink('https://github.com/OSGeo/gdal/blob/v3.9.3/alg/gdalwarpkernel.cpp','GDAL bilinear kernel implementation')+'</div>'+
+        '<p>The linked GDAL code documents the kernel; this export does not record the GDAL build used to create the archive.</p></details>';
+    }else{
+      text+='<p class="nxn-note">Recorded resampling: '+escape(a.resampling_method||'not available')+'. A bilinear equation is not assumed for this layer.</p>';
+    }
+    return text+'<p class="nxn-note">The equation describes the resampling step, not the entire processing chain. Nodata normalization and archive cleaning are separate. Grid spacing is not vertical accuracy; check the source vertical datum before comparing elevations. Display sampling and vertical exaggeration do not change stored heights.</p>';
+  }
+  function terrainDerivativeNotes(layer){
+    const kind=current.split('/').pop(),a=layer.attrs;
+    if(!/^science\/LIDAR\/DERIVED\/(slope|aspect)$/.test(current)||a.method!=='horn_1981_3x3')return '';
+    const isAspect=kind==='aspect',spacing=escape(data.grid),equation=text=>'<pre class="nxn-equation">'+escape(text)+'</pre>';
+    const input=data.layers[a.derived_from],inputAttrs=input?.attrs||{};
+    let text=isAspect?
+      '<p>Aspect describes a terrain surface’s orientation around a full circle. Unlike slope steepness, it wraps: 359° and 0° are only 1° apart.</p>'+
+      '<p class="nxn-grid-highlight"><strong>Direction convention needs review.</strong><br>The current generator’s aspect formula does not match the usual downhill bearing: a surface rising north returns 0°, although its downhill direction is south (180°). Sine/cosine encoding fixes the circular wrap, not this direction mismatch. The bearing convention still needs correction.</p>':
+      '<p>Slope measures how steep the terrain is at '+escape(data.site)+'. It is derived from the site’s '+spacing+' m DEM, in degrees—not percent slope. A flat surface is 0°; a rise of one metre per horizontal metre is 45°.</p>';
+    text+='<h3>Derived from this site’s DEM</h3><dl>'+row('DEM grid',a.derived_from)+row('Original DEM file',inputAttrs.source_filename)+
+      row('Grid spacing',data.grid+' m')+row('Coordinate system',data.epsg?'EPSG:'+data.epsg:null)+'</dl>'+
+      '<div class="nxn-source-links">'+sourceLink(inputAttrs.source_url,'Original DEM GeoTIFF · Earthdata sign-in')+'</div>';
+    text+=a.derived_from_stage==='enriched_base_after_cleaning'&&a.derived_from_archive==='self'?
+      '<p>Recorded input: the cleaned DEM stored in the same enriched archive, after enrichment cleaning. Cleaning rules and the derivative’s own missing-value behavior still affect its result.</p>':
+      '<p>The input processing stage is not established by this layer’s metadata. Earlier enrichment used the input DEM before enrichment cleaning; the shared dataset path alone does not prove that this derivative used the cleaned elevation shown here.</p>';
+    if(isAspect){
+      text+='<h3>Using aspect in models &amp; equations</h3>'+
+        '<p>For models that do not handle circular inputs directly, encode each valid angle A as <strong>two features</strong>. First convert degrees to radians using π, then take both sine and cosine.</p>'+
+        equation('θ = A × π / 180\naspect_sin = sin(θ)\naspect_cos = cos(θ)')+
+        equation('A = 359° → (−0.01745, 0.99985)\nA =   0° → ( 0.00000, 1.00000)')+
+        '<p>These pairs are close together, as the directions are. Radians alone still jump from nearly 2π to 0; one sine or cosine alone cannot distinguish every direction. Keep both features. Resolve the direction convention before interpreting them as eastness/northness or using them in physical equations.</p>'+
+        '<p>Flat or missing terrain has undefined aspect. Keep a validity mask and handle missingness explicitly; replacing an undefined angle with 0° would falsely assign north.</p>'+
+        '<details class="nxn-dem-detail"><summary>Angular differences &amp; display limitations</summary>'+
+        equation('Δθ = atan2(sin(θ₂ − θ₁),\n           cos(θ₂ − θ₁))')+
+        '<p>This gives the signed shortest angular difference in radians. For example, 359° → 0° is +1°, not −359°.</p>'+
+        (layer.aggregation?.method==='circular_mean_degrees'?
+          '<p>This export uses a circular mean of aspect directions: each finite pixel has equal weight. It averages sine and cosine components, then uses atan2 to recover a bearing in [0°, 360°). Thus 359° and 1° average to north. A block with no finite samples or mean unit-vector length R ≤ '+escape(layer.aggregation.resultant_tolerance)+' is missing. This tolerance detects numerical cancellation; it is not a terrain-dispersion threshold. The mean direction is not necessarily the aspect of an averaged DEM. This export correction does not repair the stored bearing convention.</p>':
+          '<p>This export has no recorded circular-averaging method. Earlier exports averaged real-valued aspect degrees with an ordinary block mean. Around the wrap, averaging 359° and 1° gives 180° instead of north. Use the archive, not the coarser viewer colours, for model inputs; check the bearing convention there first. Circular averaging, when needed, averages sine/cosine components and reconstructs the angle with atan2; a zero resultant has no defined mean direction. Refreshing these notes does not recalculate the exported values.</p>')+'</details>'+
+        '<div class="nxn-source-links">'+sourceLink('https://scikit-learn.org/stable/auto_examples/applications/plot_cyclical_feature_engineering.html#trigonometric-features','Sine/cosine encoding reference')+'</div>';
+    }else{
+      text+='<h3>Using slope in models &amp; equations</h3><p>Slope steepness is not a full-circle feature: it does not need the 359°/0° encoding used for aspect. Degrees can be a model input. For equations whose trigonometric functions expect radians, convert first:</p>'+
+        equation('β_rad = β_deg × π / 180\nrise / run = tan(β_rad)\npercent slope = 100 tan(β_rad)');
+    }
+    text+='<h3>Calculation in the current pipeline</h3><p>Horn’s 3 × 3 neighbourhood below is arranged with grid north at the top and grid east to the right. Elevations and horizontal spacing s = '+spacing+' m use the same units.</p>'+
+      equation('a  b  c\nd  e  f\ng  h  i')+
+      equation('p = [(c + 2f + i) − (a + 2d + g)] / (8s)\nq = [(a + 2b + c) − (g + 2h + i)] / (8s)')+
+      '<p class="nxn-note">p is the elevation gradient toward grid east; q is the gradient toward grid north. These projected grid axes are not a correction to true geographic north.</p>';
+    if(isAspect){
+      text+=equation('A_current = [90 − atan2(q, −p) × 180/π]\n            mod 360')+
+        '<p>This is the formula currently implemented, not a corrected downhill-aspect formula. The stored metadata calls the result “degrees clockwise from north”; the sign mismatch above was reproduced with a synthetic plane using this function. It is not a pixel-by-pixel audit of the archived aspect arrays.</p>';
+    }else{
+      text+=equation('β_deg = atan(√(p² + q²)) × 180/π');
+    }
+    return text+'<details class="nxn-dem-detail"><summary>Edges, missing values &amp; traceability</summary>'+
+      '<p>The array boundary is padded by repeating its edge cells. That affects edge derivatives; it is not an extra observation beyond the survey. An invalid centre is masked, and NaN in any of the eight neighbours propagates through the gradient. Slope remains 0 on flat terrain; aspect becomes NaN when √(p² + q²) &lt; 10⁻⁹. Results are stored as float32.</p>'+
+      '<p>Local method: <code>enrich_hdf5.py</code> → <code>slope_aspect(dem, res_m)</code>. The recorded method is <code>horn_1981_3x3</code>. These notes describe that current implementation; they do not rerun enrichment or modify the HDF5.</p>'+
+      '<div class="nxn-source-links">'+sourceLink('https://gdal.org/en/stable/programs/gdaldem.html#aspect','Standard terrain-aspect convention')+'</div></details>';
+  }
+  function incidenceNotes(layer){
+    if(!current.endsWith('/local_incidence_angle'))return '';
+    const a=layer.attrs,fraction=a.incidence_ge_90_fraction;
+    let summary;
+    if(a.incidence_ge_90_status==='no_valid_incidence'){
+      summary='<p>Unavailable: no finite incidence cells. This is not a zero-percent result.</p>';
+    }else if(a.incidence_ge_90_status==='computed'&&typeof fraction==='number'&&Number.isFinite(fraction)){
+      summary='<dl>'+row('Share of finite incidence cells',(100*fraction).toFixed(2)+'%')+
+        row('Cells with incidence ≥ 90°',a.incidence_ge_90_cell_count)+row('Finite incidence cells',a.incidence_valid_cell_count)+'</dl>';
+    }else if(a.incidence_ge_90_status!==undefined||fraction!==undefined){
+      summary='<p>The finite-cell percentage is unavailable in this metadata.</p>';
+    }else if(typeof a.radar_shadow_fraction==='number'&&Number.isFinite(a.radar_shadow_fraction)){
+      summary='<dl>'+row('Legacy share of whole grid',(100*a.radar_shadow_fraction).toFixed(2)+'%')+'</dl>'+
+        '<p>The historical denominator includes missing cells. This is not the corrected finite-cell percentage.</p>';
+    }else{
+      summary='<p>No incidence-threshold percentage is recorded in this export.</p>';
+    }
+    return '<h3>Incidence ≥ 90°</h3>'+summary+
+      '<p>This angle condition does not test whether other terrain blocks the radar. It is not a radar-shadow measurement. Finite geometry cells can extend outside the radar swath; this percentage is not observed radar coverage.</p>';
+  }
+  function render(){
+    const layer=data.layers[current];if(!layer)return;
+    const a=layer.attrs,isElevation=current===data.dem;
+    el('nxn-title').textContent=isElevation?'Elevation':layer.label;
+    el('nxn-site').textContent=data.site+(layer.date?' · '+layer.date:'');
+    const intro=isElevation?demNotes(a):terrainDerivativeNotes(layer)||
+      '<p>For this first preview, this layer shows recorded metadata only. We can add its explanation and calculation after reviewing the product together.</p>';
+    const survey=a.acquisition_date_end&&a.acquisition_date_end!==a.acquisition_date?
+      [a.acquisition_date,a.acquisition_date_end]:a.acquisition_date;
+    el('nxn-content').innerHTML=intro+incidenceNotes(layer)+'<h3>Recorded for this layer</h3><dl>'+
+      row('Source dataset',a.source_dataset)+row('Source file',a.source_filename)+
+      row(isElevation?'Recorded acquisition date':'Source survey',survey)+row('Source units',a.units)+
+      row('Source native spacing',a.source_native_resolution_m!=null?a.source_native_resolution_m+' m':null)+
+      row('Common archive grid',data.grid+' m')+row('Exported colour grid',layer.cell+' m')+
+      row('Coordinate system',data.epsg?'EPSG:'+data.epsg:null)+row('Resampling',a.resampling_method)+
+      row('Derived from',a.derived_from)+row('Input processing stage',a.derived_from_stage)+row('Input archive scope',a.derived_from_archive)+
+      row('Derivation version',a.derivation_version)+row('Derivative missing-value rule',a.derivation_nodata_note)+
+      row('Recorded method',a.method)+row(isElevation&&hasGrandMesaProvenanceConflict(a)?'Archived note (conflicts with provider’s DTM guide)':'Source note',a.source_note)+
+      row('Previous source note',a.source_note_previous)+row('Source-note correction',a.source_note_correction)+row('HDF5 path',current)+'</dl>'+
+      '<p class="nxn-note">Metadata is copied from this existing export. This panel does not independently validate the source values.</p>';
+  }
+  function close(restoreFocus=true){
+    panel.hidden=true;trigger.setAttribute('aria-expanded','false');
+    if(restoreFocus&&getComputedStyle(info).display!=='none'&&getComputedStyle(info).visibility!=='hidden')trigger.focus();
+  }
+  function sync(){
+    const next=pathNode.textContent.trim();
+    if(data.layers[next])current=next;
+    trigger.disabled=!data.layers[current];
+    trigger.setAttribute('aria-label','Open product notes for '+(data.layers[current]?.label||'this layer'));
+    if(!panel.hidden)render();
+  }
+  trigger.addEventListener('click',event=>{
+    event.stopPropagation();
+    if(!panel.hidden){close();return;}
+    sync();if(trigger.disabled)return;
+    render();panel.hidden=false;trigger.setAttribute('aria-expanded','true');el('nxn-close').focus();
+  });
+  el('nxn-close').addEventListener('click',()=>close());
+  panel.addEventListener('keydown',event=>{
+    event.stopPropagation();
+    if(event.key==='Escape'){event.preventDefault();close();}
+  });
+  trigger.addEventListener('keydown',event=>event.stopPropagation());
+  new MutationObserver(sync).observe(pathNode,{childList:true,characterData:true,subtree:true});
+  // Existing Info/Timeline/Details toggles remain the only visibility authority.
+  function syncVisibility(){
+    const state=getComputedStyle(info),hidden=state.visibility==='hidden';
+    logo.hidden=hidden;
+    if(hidden||state.display==='none')close(false);
+  }
+  new MutationObserver(syncVisibility).observe(info,{attributes:true,attributeFilter:['style']});
+  // The watermark never covers existing widgets, even at short window heights.
+  function placeLogo(){
+    const a=logo.getBoundingClientRect();
+    const overlaps=['dock','legend','pitCtl','info'].some(id=>{
+      const node=el(id);if(!node)return false;
+      const s=getComputedStyle(node);if(s.display==='none'||s.visibility==='hidden')return false;
+      const b=node.getBoundingClientRect();return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
+    });
+    logo.style.opacity=overlaps?'0':'.65';
+  }
+  if(typeof ResizeObserver!=='undefined'){
+    const resize=new ResizeObserver(placeLogo);
+    ['stage','dock','legend','info','pitCtl'].forEach(id=>{if(el(id))resize.observe(el(id));});
+  }
+  sync();syncVisibility();placeLogo();
+})();
+</script>

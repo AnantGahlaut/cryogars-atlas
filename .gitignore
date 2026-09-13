@@ -1,0 +1,69 @@
+# Research data and regenerated exports
+/out/
+/work/
+/work2/
+/ann_cache/
+/viewer/
+/inventory.json
+/ASO_*/
+/tmp/
+*.h5
+*.hdf5
+*.tif
+*.tiff
+*.laz
+*.las
+*.zip
+
+# Local snapshots, process logs, and private development notes
+/backups/
+*.bak
+*.bak.*
+*.log
+*.err
+/.status_targets.json
+/HANDOFF.md
+/DEFERRED_DATA.md
+/docs/pipeline-notes.md
+/docs/ISSUE_REGISTER.md
+/docs/INCOMING_ASO_DATA_REVIEW.md
+/docs/product_trace/
+/docs/superpowers/
+/enrich_hdf5.v3.py
+/paths.bat
+/find_python.bat
+/Launch Atlas.bat
+/Resume Build.bat
+/Status.bat
+/run_build_task.bat
+/keep_awake.py
+/status.py
+
+# Keep runtime add-on/check sources; omit generated preview variants
+/ui_preview/*explorer.html
+/ui_preview/*preview.html
+/ui_preview/*manifest.json
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+.netrc
+_netrc
+*.pem
+*.key
+/.codex/
+/.agents/
+
+# Python and editor output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
