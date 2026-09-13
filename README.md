@@ -17,6 +17,7 @@ Cryosphere, Geophysics and Remote Sensing research lab, Boise State University.
 
 **Release target: v1.0.05 · fifth enrichment cycle · research preview**
 
+[Open 3D Atlas](https://anantgahlaut.github.io/cryogars-atlas-viewer/) ·
 [Get started](#get-started) · [Field sites](#field-sites) ·
 [Scientific notes](docs/scientific-notes.md) ·
 [Data sources](docs/data-sources.md) · [Release notes](CHANGELOG.md)
@@ -82,7 +83,12 @@ has no LiDAR snow-depth labels for supervised snow-depth evaluation.
 **Repository status:** private development source at
 [AnantGahlaut/cryogars-atlas](https://github.com/AnantGahlaut/cryogars-atlas).
 A source checkout does not include generated viewer pages or the HDF5 archive.
-No public viewer/download location or code license has been selected yet.
+
+**[Open the public 3D Atlas](https://anantgahlaut.github.io/cryogars-atlas-viewer/)**
+to explore all eight sites without installing anything or signing in. The
+prepared viewer snapshot is hosted separately from this private development
+repository; the full-resolution HDF5 archive is not included. A code license
+has not yet been selected.
 
 With a generated viewer bundle, open `viewer/index.html` in a modern browser,
 select a field site, and choose **Open 3D explorer**. No Python installation or
