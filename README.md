@@ -4,56 +4,92 @@
 
 # SnowEx Field Atlas
 
-**Aligned LiDAR and UAVSAR observations for snow research.**
+**Explore aligned LiDAR and UAVSAR observations, compare snow products, and
+inspect the data behind them.**
 
-SnowEx Field Atlas brings terrain, snow depth, vegetation height, and L-band
-radar observations together on a common grid across eight field sites in the
-western United States. It combines a per-site HDF5 archive with an interactive
-3D explorer, making it possible to inspect measurements, acquisition dates,
-spatial coverage, and processing metadata in one place.
-
-**Author:** Anant Gahlaut · [CryoGARS](https://github.com/cryogars),
+Built by **Anant Gahlaut** at [CryoGARS](https://github.com/cryogars),
 Cryosphere, Geophysics and Remote Sensing research lab, Boise State University.
 
-**Release target: v1.0.05 · fifth enrichment cycle · research preview**
+**Research preview · 8 field sites · 1,664 display layers**
 
-[Open 3D Atlas](https://anantgahlaut.github.io/cryogars-atlas-viewer/) ·
-[Get started](#get-started) · [Field sites](#field-sites) ·
-[Scientific notes](docs/scientific-notes.md) ·
-[Data sources](docs/data-sources.md) · [Release notes](CHANGELOG.md)
+Release target: **v1.0.05** · fifth enrichment cycle.
 
-## What the project provides
+[Viewer](#viewer) · [Download the archive](#download-the-archive) ·
+[Work in progress](#work-in-progress)
 
-LiDAR and radar products arrive with different grids, footprints, acquisition
-dates, and file conventions. This project organizes those differences into a
-consistent archive while retaining the information needed to interpret them.
+## Viewer
 
-- **A common analysis grid.** Per-site archives align source rasters to a 3 m
-  projected grid, with coordinate systems, transforms, units, and source
-  metadata stored alongside the data.
-- **LiDAR–radar matching.** Footprint-based discovery and temporal match tables
-  help identify which observations can be studied together.
-- **Enriched research layers.** Terrain derivatives, vegetation-based canopy
-  fractions, coherence masks, and approximate radar geometry support exploration
-  and subsequent method development.
-- **An interactive field atlas.** Browse the archive hierarchy, inspect dates
-  and metadata, compare layers on 3D terrain, and adjust colour palettes in a
-  browser. Display data are embedded in each site export.
-- **Temporary raster comparisons.** Import a numeric GeoTIFF or choose another
-  same-product layer, inspect A/B/difference maps, and export a labelled 2D PNG.
-  Runs locally in the browser at the exported website grid resolution; archive
-  data stay untouched. See [comparison usage and limitations](docs/BROWSER_COMPARISON.md).
-- **Archive verification and transfer checks.** Independent enrichment checks
-  and SHA-256 manifests support quality review and file-integrity verification.
+### [Open the 3D Atlas →](https://anantgahlaut.github.io/cryogars-atlas-viewer/)
 
-This release provides data preparation and exploration infrastructure for
-snow-depth research. Validated machine-learning retrievals, radar-derived snow
-water equivalent (SWE), and NISAR integration are future work.
+Choose a site and open its explorer. No sign-in, Python installation, or HDF5
+download is required. Use a modern WebGL-capable browser; desktop viewing is
+recommended.
 
-## Field sites
+![Banner Summit's LiDAR-derived terrain in the live 3D explorer](assets/screenshots/banner-summit-terrain.jpg)
 
-The current explorer snapshot covers Colorado, Idaho, and Utah. Every site has
-terrain, vegetation-height, and UAVSAR layers; snow-depth coverage varies.
+*Banner Summit elevation, displayed on the existing 3D terrain mesh. The data
+tree, colour legend, and comparison controls remain available beside the map.*
+
+### What it does
+
+- **Explore the observations in 3D.** View terrain, LiDAR snow depth and vegetation
+  height, UAVSAR amplitude, coherence, phase, and available derived products.
+- **Find the right layer.** Search the archive hierarchy, switch sites, and use
+  the acquisition timeline to inspect survey dates and radar pairs.
+- **Inspect context and methods.** Open product information and notes for units,
+  grid spacing, data availability, source information, equations, and limitations.
+- **Control the display.** Blend overlays, adjust terrain detail and lighting,
+  choose palettes and colour stretches, and save custom palette presets by
+  product type.
+- **Compare two products.** Select another same-product layer or temporarily
+  import a numeric GeoTIFF. Switch between reference **A**, comparison **B**,
+  and **B − A** on the existing 3D terrain.
+- **Export a 2D figure.** Choose comparison colours and percentile limits, then
+  export a north-up PNG with its legend, source labels, comparison direction,
+  coordinate system, and analysis-grid resolution.
+
+Imported GeoTIFFs and comparison results stay in the visitor's browser. They
+are not uploaded or added to the permanent archive.
+
+![Snow-depth difference displayed in 3D with A, B, difference, colour, and PNG export controls](assets/screenshots/snow-depth-comparison.jpg)
+
+*An actual browser comparison at Banner Summit: B = 2021-03-15 snow depth,
+A = 2020-02-18 snow depth. The screenshot uses a robust 2nd–98th percentile
+colour stretch with symmetric difference limits. This illustrates differences
+between two surveys, not model accuracy.*
+
+### How it works
+
+1. **Prepare a common reference grid.** The pipeline reprojects and resamples
+   accepted rasters onto each site's 3 m DEM reference grid and stores the
+   aligned layers, coordinates, dates, and metadata in HDF5. The same row and
+   column represent the same mapped location across aligned raster layers.
+2. **Create a browser-sized export.** The exporter samples and quantizes display
+   arrays, then embeds them with the application in a self-contained HTML page.
+   The browser does not read or download the full HDF5 archive.
+3. **Render and compare locally.** WebGL draws a DEM-based terrain mesh and
+   colours it with the selected product. Automatic terrain detail adapts the
+   mesh to the view; it does not increase the underlying data resolution.
+   Comparisons align B to A's exported grid and use their shared valid cells.
+
+The **archive grid, exported colour grid, and displayed terrain mesh are
+different resolutions**. A 3 m common grid does not create native 3 m radar
+information or guarantee common dates, vertical datums, or measurement accuracy.
+Current website colour values are 8-bit quantized, and some products have clipped
+tails. Comparison PNGs use the exported analysis grid, not the original 3 m
+archive or a perspective screenshot. Colour stretches change appearance, not
+the comparison's underlying samples or statistics.
+
+Use the full archive for quantitative modeling. Read the
+[comparison guide and limitations](docs/BROWSER_COMPARISON.md) and
+[scientific notes](docs/scientific-notes.md) before interpreting differences.
+
+The eight explorer pages total approximately **105 MiB**; larger sites can take
+longer to load. Application code and display data are embedded. Optional Google
+Fonts have local fallbacks.
+
+<details>
+<summary>Field sites and current viewer coverage</summary>
 
 | Site | State | Snow-depth dates | Vegetation-height dates | Radar groups | Display layers |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -67,61 +103,59 @@ terrain, vegetation-height, and UAVSAR layers; snow-depth coverage varies.
 | Reynolds Creek | Idaho | 0 | 1 | 1 | 35 |
 | **Total** | **3 states** | **15** | **12** | **67** | **1,664** |
 
-Counts were read from the eight existing explorer payloads during release
-preparation. Dates are counted separately within each site. A radar group is a
-site/date-pair/flight-line combination; shared flights can appear at multiple
-sites. Display layers include derived products and radar channels, and are not
-a count of independent observations or full-resolution HDF5 datasets.
+These counts describe the published viewer snapshot, not incoming data awaiting
+integration. Dates are counted within each site. Radar groups are
+site/date-pair/flight-line combinations; shared flights can appear at multiple
+sites. Display layers include radar channels and derived products, not just
+independent observations. Reynolds Creek currently supplies terrain,
+vegetation, and radar context, but no LiDAR snow-depth labels in this snapshot.
 
-Reynolds Creek provides terrain, vegetation, and radar context, but currently
-has no LiDAR snow-depth labels for supervised snow-depth evaluation.
+</details>
 
-## Get started
+## Download the archive
 
-### Explore a prepared viewer
+The full-resolution analysis archive is separate from the browser viewer and
+this source repository. It contains per-site HDF5 files with aligned LiDAR and
+UAVSAR products, a common 3 m grid, temporal match tables, and processing metadata.
 
-**Repository status:** private development source at
-[AnantGahlaut/cryogars-atlas](https://github.com/AnantGahlaut/cryogars-atlas).
-A source checkout does not include generated viewer pages or the HDF5 archive.
+**The archive download link has not been published yet.** It will be added here
+with the selected release version, file inventory, sizes, and verified SHA-256
+checksums. The viewer link above is available now; it is not a download of the
+full archive.
 
-**[Open the public 3D Atlas](https://anantgahlaut.github.io/cryogars-atlas-viewer/)**
-to explore all eight sites without installing anything or signing in. The
-prepared viewer snapshot is hosted separately from this private development
-repository; the full-resolution HDF5 archive is not included. A code license
-has not yet been selected.
+### What is inside
 
-With a generated viewer bundle, open `viewer/index.html` in a modern browser,
-select a field site, and choose **Open 3D explorer**. No Python installation or
-HDF5 download is needed to browse a prepared export. The 3D explorers require
-WebGL.
+- **LiDAR:** terrain elevation, dated snow-depth and vegetation-height layers.
+- **UAVSAR:** available polarizations, amplitudes, coherence, interferograms,
+  unwrapped phase, and approximate geometry.
+- **Derived layers:** slope, aspect, vegetation-height-based canopy fractions,
+  and coherence masks, with product-specific qualifications.
+- **Context:** CRS and affine transforms, source identifiers, survey/date-pair
+  information, radar–LiDAR matches, and processing metadata.
 
-The entrance page has no external dependencies. Site exports embed their
-application and sampled data, but currently request Google Fonts; local font
-fallbacks are provided. The eight site pages together occupy approximately
-105 MiB, so larger sites can take time to load.
+Product availability varies by site. Base `<site>.h5` files are already aligned
+and processed; `<site>.enriched.h5` files contain the enrichment stage. Neither
+should be described as untouched sensor data.
 
-### Generate a viewer from an existing archive
+<details>
+<summary>HDF5 layout and a small Python example</summary>
 
-Use a Python environment with NumPy and h5py installed. Run commands from this
-project's directory and replace `path/to/archive` with the directory containing
-your per-site HDF5 files:
-
-```bash
-python make_explorer.py --site mores_creek --out-dir "path/to/archive" --viewer-dir viewer
+```text
+identification/                       site, grid, and processing metadata
+matches/                              LiDAR–radar matching records
+science/
+  LIDAR/
+    DEM/grids/elevation
+    SD/<survey_date>/snow_depth
+    VH/<survey_date>/veg_height
+    DERIVED/
+  UAVSAR/
+    <date1>_<date2>/<flight_line>/
+      <polarization>/
+      GEOMETRY/
 ```
 
-The builder prefers `<site>.enriched.h5` when available, falls back to
-`<site>.h5`. Open `viewer/mores_creek_explorer.html` after this single-site build.
-For automatic all-site discovery and an entrance page, use `--all` in place of
-`--site mores_creek`; discovery currently requires the base `<site>.h5` filenames
-to be present, even when enriched files supply the data. This command reads and
-samples archive arrays; large sites require substantial memory and processing
-time. See [the workflow guide](docs/workflows.md) for dependencies, acquisition,
-enrichment, verification, and UI maintenance.
-
-### Read an archive in Python
-
-Read a small window without loading an entire site into memory:
+Read a small window without loading an entire site:
 
 ```python
 import h5py
@@ -138,101 +172,60 @@ with h5py.File("path/to/archive/banner_summit.enriched.h5", "r") as archive:
     print(survey_date, window.shape, dict(depth.attrs))
 ```
 
-Use the recorded affine transform and CRS to locate a window geographically.
-Missing values must remain masked during analysis. Keep readers closed while
-an archive build or enrichment process is writing the same file.
+Use the recorded transform and CRS to locate pixels. Preserve missing-value
+masks, and keep readers closed while an archive writer is active. See the
+[workflow guide](docs/workflows.md) for acquisition, generation, verification,
+and building a viewer from an existing archive.
 
-## How the archive is organized
+</details>
 
-```text
-Source products and annotations
-          |
-          v
-Discover footprints and temporal matches
-          |
-          v
-Reproject and align to a per-site 3 m grid
-          |
-          v
-<site>.h5  -->  enrichment  -->  <site>.enriched.h5
-                                      |             |
-                                      v             v
-                               verify + hash   sample for display
-                                                    |
-                                                    v
-                                            <site>_explorer.html
-```
+## Work in progress
 
-The enriched archive uses the following main groups; availability varies by site:
+**Status reviewed: 2026-09-13.** The public viewer is a working research
+snapshot, not yet the final corrected scientific release. Approved corrections
+have been implemented and tested in the working source, but that is distinct
+from verifying regenerated HDF5 files and browser exports.
 
-```text
-identification/                       site, grid, and processing metadata
-matches/                              LiDAR–radar matching records
-science/
-  LIDAR/
-    DEM/grids/elevation
-    SD/<survey_date>/snow_depth
-    VH/<survey_date>/veg_height
-    DERIVED/                          terrain and vegetation derivatives
-  UAVSAR/
-    <date1>_<date2>/<flight_line>/
-      <polarization>/                 amplitude, phase, coherence, masks
-      GEOMETRY/                       available radar geometry layers
-```
+### Before the next scientific release
 
-The base `.h5` files already contain aligned and processed data; “raw archive”
-in older project notes means the pre-enrichment archive, not untouched sensor
-data. Enrichment writes a separate `.enriched.h5` product.
-
-## Scientific interpretation
-
-- **Grid spacing and measurement resolution differ.** Alignment to a 3 m grid
-  does not create native 3 m radar information. The archive grid, display colour
-  grid, and terrain mesh also have different sampling scales.
-- **Dates and terrain sources differ.** Grand Mesa combines 2017 and 2020
-  snow-depth surveys and uses a LiDAR-derived snow-off DTM from the HRSI
-  collection, resampled from 1 m to 3 m. Reynolds Creek uses a 2014 LiDAR DEM.
-  Six other sites use the QSI DEM products.
-- **Canopy fractions are a vegetation-height proxy.** The 2017 Grand Mesa
-  scenes rely on later canopy information. The centered window is 11 × 11 cells
-  (33 × 33 m at 3 m spacing), from a nominal 30 m request. Edges truncate the
-  window; missing vegetation cells are excluded from its denominator. A missing
-  center can receive a fraction; no finite cells in the window gives no value.
-- **Some derived geometry needs qualification.** The current aspect convention
-  has a north/south reflection relative to conventional downhill bearings, and
-  radar incidence uses approximate peg-track geometry.
-- **Derivative input stages differ by generation.** The corrected source now
-  computes terrain, canopy and incidence layers from the cleaned bases stored
-  in the same output archive and records that stage. Existing production files
-  await regeneration; their derivatives still reflect the earlier input policy.
-- **Display and verification have limits.** Sampled colour stretches are not
-  quantitative uncertainty estimates. Passing archive checks establishes the
-  checked processing invariants, not retrieval accuracy or label truth.
-
-Read [processing details and known limitations](docs/scientific-notes.md) before
-quantitative analysis or model evaluation, including spatial and temporal data
-separation and the limits of the recorded provenance.
-
-## Documentation and development
-
-| Resource | Contents |
+| Area | Current status and remaining work |
 | --- | --- |
-| [Workflow guide](docs/workflows.md) | Environment, build commands, verification, and viewer maintenance |
-| [Scientific notes](docs/scientific-notes.md) | Processing assumptions, display sampling, and known limitations |
-| [Data sources](docs/data-sources.md) | Dataset identifiers, source links, and citation guidance |
-| [Release notes](CHANGELOG.md) | Scope and version conventions for v1.0.05 |
-| [Release checklist](docs/release-checklist.md) | Remaining publication and reproducibility work |
+| Corrected archive and viewer | Aspect direction and circular display handling, cleaned-input derivatives, metadata, and label corrections are prepared in working source. Regenerate the affected products, validate all eight sites, and publish one matching viewer snapshot. The coordinated rebuild remains on hold pending final review. |
+| Radar geometry | Look-side, projected-heading, and summary corrections are implemented. Actual aircraft-height compatibility, some vertical-reference information, and navigation accuracy still need supporting evidence. Incidence remains approximate; full terrain occlusion is not implemented. |
+| Archive download and integrity | Finalize verified backup storage and the distribution files, generate and verify final release manifests, then publish the archive download. Validator and forward-provenance fixes are prepared; historical missing lineage remains explicitly unknown. |
+| Reproducibility and usability | Test installation from a fresh environment, establish portable automated checks, and complete cross-browser, keyboard, palette, comparison/PNG, and memory-limit acceptance. Keep documentation, legend labels, and published versions synchronized. |
+| New ASO observations | Reconcile missing/conflicting georeferencing, survey dates, duplicate products, masks, and modeled-density/SWE lineage before ingestion. These incoming packages are deferred and are not included in the viewer counts above. |
+| Release metadata | Select the code license, finalize citation/contributor metadata, and review dataset attribution and distribution requirements. A later transfer to the CryoGARS organization remains separate. |
 
-The repository includes small offline fixtures and regression tests. The
-[workflow guide](docs/workflows.md#checks) distinguishes source tests, checks
-requiring generated exports, and full-archive verification.
+The immediate milestone is a **verified, versioned SnowEx archive with a
+matching public viewer and reproducible download**, retaining the established
+interface.
 
-## Attribution and license
+### Longer-term research
 
-This work uses observations provided by the NASA SnowEx community, the NASA/JPL
-UAVSAR team, and the NSIDC, ASF, and ORNL data archives. Cite the original
-datasets and identify the site, acquisition dates, subset, and processing
-version used in your analysis; see [data sources](docs/data-sources.md).
+- Snow-depth modeling evaluated across held-out sites and later years.
+- Density estimation and an eventual SWE product, with independent evaluation
+  and explicit uncertainty and provenance.
+- NISAR ingestion and visualization at substantially larger scales.
 
-**Code license: not yet selected.** No code license is supplied in this working
-copy. Source datasets retain their own attribution and use requirements.
+These are future research directions, not capabilities claimed by this release.
+Browser comparison of a user-supplied prediction is already supported; a
+validated retrieval model is not included.
+
+### Documentation and attribution
+
+[Comparison guide](docs/BROWSER_COMPARISON.md) ·
+[Scientific notes](docs/scientific-notes.md) ·
+[Data sources](docs/data-sources.md) ·
+[Workflow guide](docs/workflows.md) ·
+[Release notes](CHANGELOG.md) ·
+[Release checklist](docs/release-checklist.md)
+
+Observations are provided by the NASA SnowEx community, NASA/JPL UAVSAR, and
+the NSIDC, ASF, and ORNL archives. Cite the original datasets and identify the
+site, dates, subset, and processing version used in your analysis.
+
+**Code license: not yet selected.** Source datasets retain their own attribution
+and use requirements. The development repository remains private; the prepared
+[viewer distribution](https://github.com/AnantGahlaut/cryogars-atlas-viewer) and
+[hosted Atlas](https://anantgahlaut.github.io/cryogars-atlas-viewer/) are public.
