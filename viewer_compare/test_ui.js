@@ -106,6 +106,20 @@ test('invalid external mask fractions stay missing in Average and 0–1 comparis
   await h.buttons[1].fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[NaN,1,NaN,NaN]);
 });
 
+test('binary palette editing preserves the Average difference centring preference',async()=>{
+  const h=harness();h.navigate('mask_A');await compareLayers(h);
+  assert.equal(h.shown.at(-1).zeroCentered,true);
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:.5});
+  h.setAppearance({lo:-1,hi:1,zeroCentered:false,style:{stops:[[0,'#000000'],[1,'#ffffff']],reverse:false},
+    paletteName:'Edited mask palette',rangeLabel:'Fixed states'});
+  await h.el('nxc-terrain-style').fire('click');assert.equal(h.shown.at(-1).zeroCentered,false);
+  h.setMaskOptions('mask_A',{mode:'average',cutoff:.5});
+  assert.equal(h.shown.at(-1).zeroCentered,true);assert.equal(h.el('nxc-zero').checked,true);
+  h.el('nxc-zero').checked=false;await h.el('nxc-zero').fire('change');
+  assert.ok(Number.isFinite(h.shown.at(-1).lo));assert.ok(Number.isFinite(h.shown.at(-1).hi));
+  assert.equal(h.shown.at(-1).zeroCentered,false);
+});
+
 test('mask setting changes never reread TIFF data or redraw a different layer',async()=>{
   let reads=0;const h=harness({readRasters:async()=>{reads++;return new Float32Array([0,.75,.25,1]);}});
   h.navigate('mask_A');await h.el('nxc-open').fire('click',{stopPropagation(){}});
@@ -255,6 +269,49 @@ test('a legend-edited palette survives switching maps after choosing a percentil
   await h.terrainButtons[0].fire('click');await h.terrainButtons[2].fire('click');
   assert.equal(h.shown.at(-1).style.stops[0][1],'#00ff00');assert.equal(h.shown.at(-1).style.reverse,true);
   assert.match(h.shown.at(-1).rangeLabel,/Robust 2–98%/);
+});
+
+test('zero-centre intent survives legend capture, palette edits, range presets and PNG export',async()=>{
+  const h=harness();await compareLayers(h);
+  assert.equal(h.shown.at(-1).zeroCentered,true);
+  const summary=h.el('nxc-summary').textContent;
+  h.setAppearance({lo:-4,hi:4,zeroCentered:true,style:{stops:[[0,'#b42d1d'],[.5,'#f6f5f0'],[1,'#1d5aa7']],reverse:false},
+    paletteName:'Diverging',rangeLabel:'3D legend Robust 2–98% stretch · Difference terrain samples (sampled ranks) · zero-centred limits'});
+  await h.el('nxc-terrain-style').fire('click');assert.equal(h.el('nxc-zero').checked,true);
+  h.el('nxc-palette').value='saved:mine';await h.el('nxc-palette').fire('change');
+  await h.presets[1].fire('click');assert.equal(h.shown.at(-1).zeroCentered,true);
+  assert.equal(h.shown.at(-1).lo,-h.shown.at(-1).hi);
+  await h.el('nxc-export').fire('click');assert.match(h.texts.join(' '),/2–98% stretch · zero-centred limits/);
+  await h.terrainButtons[0].fire('click');assert.equal(h.shown.at(-1).zeroCentered,false);
+  await h.terrainButtons[2].fire('click');assert.equal(h.shown.at(-1).zeroCentered,true);
+  h.el('nxc-zero').checked=false;await h.el('nxc-zero').fire('change');
+  assert.equal(h.shown.at(-1).zeroCentered,false);assert.ok(h.shown.at(-1).lo>0);
+  await h.presets[2].fire('click');assert.equal(h.shown.at(-1).zeroCentered,false);
+  assert.equal(h.el('nxc-summary').textContent,summary);
+});
+
+test('zero-centre can be switched off and on after manual legend limits without requiring percentiles',async()=>{
+  const h=harness();await compareLayers(h);
+  h.setAppearance({lo:-4,hi:4,zeroCentered:true,style:{stops:[[0,'#000000'],[1,'#ffffff']],reverse:false},
+    paletteName:'Manual palette',rangeLabel:'Custom value limits · zero-centred limits'});
+  await h.el('nxc-terrain-style').fire('click');assert.equal(h.el('nxc-percent-low').value,'');
+  h.el('nxc-zero').checked=false;await h.el('nxc-zero').fire('change');
+  assert.equal(h.shown.at(-1).zeroCentered,false);assert.equal(h.el('nxc-export').disabled,false);
+  h.setAppearance({lo:-4,hi:2,zeroCentered:false,style:{stops:[[0,'#000000'],[1,'#ffffff']],reverse:false},
+    paletteName:'Manual palette',rangeLabel:'Custom value limits'});
+  h.el('nxc-zero').checked=true;await h.el('nxc-zero').fire('change');
+  assert.deepEqual([h.shown.at(-1).lo,h.shown.at(-1).hi],[-4,4]);
+  assert.equal(h.shown.at(-1).zeroCentered,true);assert.match(h.shown.at(-1).rangeLabel,/zero-centred limits/);
+});
+
+test('zero-only toggle honours manual limits changed while the colour inspector is already open',async()=>{
+  const h=harness();await compareLayers(h);await h.el('nxc-terrain-style').fire('click');
+  h.setAppearance({lo:-40,hi:40,zeroCentered:true,style:{stops:[[0,'#00ff00'],[1,'#ffffff']],reverse:true},
+    paletteName:'Latest manual palette',rangeLabel:'Custom value limits · zero-centred limits'});
+  h.el('nxc-zero').checked=false;await h.el('nxc-zero').fire('change');
+  const d=h.shown.at(-1);assert.deepEqual([d.lo,d.hi],[-40,40]);
+  assert.equal(d.style.stops[0][1],'#00ff00');assert.equal(d.style.reverse,true);
+  assert.equal(d.zeroCentered,false);assert.equal(d.paletteName,'Latest manual palette');
 });
 test('palette changes preserve legend limits edited after opening the modeless inspector',async()=>{
   const h=harness();await compareLayers(h);await h.el('nxc-terrain-style').fire('click');

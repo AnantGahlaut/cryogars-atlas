@@ -10,7 +10,7 @@
     if(!sorted.length)throw Error('No valid values for a display range.');
     const quantile=p=>{const rank=(sorted.length-1)*p/100,i=Math.floor(rank),f=rank-i;return sorted[i]*(1-f)+sorted[Math.min(i+1,sorted.length-1)]*f;};
     let lo=quantile(lower),hi=quantile(upper);
-    if(zeroCentered){const span=Math.max(Math.abs(lo),Math.abs(hi))||1;lo=-span;hi=span;}
+    if(zeroCentered){const span=Math.max(Math.max(Math.abs(lo),Math.abs(hi))||1,1e-6);lo=-span;hi=span;}
     else if(lo===hi){const pad=Math.max(Math.abs(lo)*.01,.000001);lo-=pad;hi+=pad;}
     return {lo,hi,lower,upper,zeroCentered:!!zeroCentered};
   }

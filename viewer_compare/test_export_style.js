@@ -11,6 +11,13 @@ test('zero-centred differences expand percentile bounds symmetrically and disclo
   const r=E.stretch([-20,0,10,40],0,100,true);
   assert.equal(r.lo,-40);assert.equal(r.hi,40);assert.equal(r.zeroCentered,true);
 });
+
+test('tiny centred differences keep zero at the palette midpoint in exported pixels',()=>{
+  const r=E.stretch([1e-9,2e-9],2,98,true);let written;
+  const canvas={getContext:()=>({createImageData:()=>({data:new Uint8ClampedArray(4)}),putImageData:im=>{written=im.data;}})};
+  E.raster({createElement:()=>canvas},[0],1,1,r.lo,r.hi,true,{builtin:'diverging'});
+  assert.deepEqual(Array.from(written),[246,245,240,255]);
+});
 test('invalid percentiles reject, while constant-valued maps retain a usable range',()=>{
   for(const p of [[-1,90],[2,101],[90,10],[2,2],[NaN,90]])assert.throws(()=>E.stretch([1,2],...p,false),/percentile/i);
   const r=E.stretch([5,5,5],2,98,false);assert.ok(r.lo<5&&r.hi>5);

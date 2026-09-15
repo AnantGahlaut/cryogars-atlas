@@ -157,10 +157,12 @@
       const r=PREF.ranges[primKey],validRange=r&&r.length===2&&isFinite(r[0])&&isFinite(r[1])&&r[1]>r[0];
       const fallback=(mode==='robust'||mode==='detail')&&!validRange;
       const terrainSamples=({a:'A',b:'B',difference:'Difference'}[lastShown.id]||lastShown.id)+' terrain samples (sampled ranks)';
-      return {lo,hi,style,
+      const zeroCentered=!!P.arrays[primKey].comparisonZeroCentered;
+      const rangeLabel=categorical&&lastShown.rangeLabel||sameRange&&lastShown.rangeLabel||(fallback?'Full 0–100% stretch · fallback: percentile limits missing, invalid or tied':
+        ({full:'Full 0–100% stretch',robust:'3D legend Robust 2–98% stretch · '+terrainSamples,detail:'3D legend Detail 10–90% stretch · '+terrainSamples}[mode]||'Custom value limits'));
+      return {lo,hi,style,zeroCentered,
         paletteName:sameStyle&&lastShown.paletteName|| (name==='custom'?'Custom legend palette':PALETTE_LABELS[name]||name),
-        rangeLabel:categorical&&lastShown.rangeLabel||sameRange&&lastShown.rangeLabel||(fallback?'Full 0–100% stretch · fallback: percentile limits missing, invalid or tied':
-          ({full:'Full 0–100% stretch',robust:'3D legend Robust 2–98% stretch · '+terrainSamples,detail:'3D legend Detail 10–90% stretch · '+terrainSamples}[mode]||'Custom value limits'))};
+        rangeLabel:zeroCentered&&!rangeLabel.includes('zero-centred limits')?rangeLabel+' · zero-centred limits':rangeLabel};
     },
     show:notifyAfter(function(result){
       const identity=instance+'_'+generation;
@@ -180,6 +182,7 @@
       P.arrays[k]={w:rg.w,h:rg.h,cell_m:rg.dx,lo,hi,bits:16,b64:btoa(binary),
         valid,total:n,leaf:'comparison_'+identity,label:result.label,short:result.label,
         comparisonAngleKind:result.id==='difference'?0:result.mode==='degrees'?1:result.mode==='radians'?2:0,
+        comparisonZeroCentered:result.id==='difference'&&result.zeroCentered===true&&!result.maskBinary&&!result.maskCategory,
         maskBinary:!!result.maskBinary,maskCategory:result.maskCategory,
         unit:result.unit||'',domain:'meta',cmap:result.cmap||'diverging'};
       clearStyle(k);
@@ -189,7 +192,7 @@
         PREF.palettes[k]=result.style.builtin||'__custom__';
         if(!result.style.builtin)PREF.customs[k]={mode:'continuous',stops:copy(result.style.stops)};
         PREF.reverse[k]=!!result.style.reverse;
-        // The PNG already chose its exact (possibly asymmetric) display limits.
+        // Palette choice is independent of the explicit comparison centring policy.
         P.arrays[k].cmap='viridis';
       }
       // Map result-cell centers onto terrain-cell centers, not rounded size ratios.

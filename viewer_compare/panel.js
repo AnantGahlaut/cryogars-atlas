@@ -163,6 +163,7 @@
     const rangeLabel=`${rangeName} ${s.lower}–${s.upper}% stretch${difference&&s.zero?' · zero-centred limits':''}`;
     return {values,lo,hi,difference,title,unit:difference?result.unit:result.mode==='mask'?(binary?'state':'fraction'):result.aUnit,
       grid:result.grid,style,paletteName:palette.name,rangeLabel,...s.appearance,
+      zeroCentered:difference&&!binary&&!!(s.appearance?.zeroCentered??s.zero),
       ...(result.mode==='mask'?{maskKey:result.aname,maskBinary:binary&&!difference,maskCategory:binary?(difference?'transition':'binary'):null}:{}),
       ...(binary?{lo,hi,rangeLabel:`0–1 preview · cutoff ${result.maskOptions.cutoff} · fixed ${difference?'−1 / 0 / +1':'0 / 1'} states`}:{})};
   }
@@ -175,7 +176,7 @@
         styles[styleKey()].appearance={...styles[styleKey()].appearance,style:a.style,paletteName:a.paletteName};
       return;
     }
-    if(a.lo!==d.lo||a.hi!==d.hi||JSON.stringify(a.style)!==JSON.stringify(d.style)||a.rangeLabel!==d.rangeLabel||a.paletteName!==d.paletteName)
+    if(a.lo!==d.lo||a.hi!==d.hi||!!a.zeroCentered!==d.zeroCentered||JSON.stringify(a.style)!==JSON.stringify(d.style)||a.rangeLabel!==d.rangeLabel||a.paletteName!==d.paletteName)
       styles[styleKey()].appearance=a;
   }
   function refreshPalettes(){
@@ -191,10 +192,10 @@
     $('percent-low').value=String(s.lower);$('percent-high').value=String(s.upper);$('zero').checked=s.zero;
     if(s.appearance){
       $('palette').value='__terrain__';$('reverse').checked=false;
+      $('zero').checked=!!(s.appearance.zeroCentered??s.zero);
       if(s.appearance.rangeLabel){
         const p=s.appearance.rangeLabel.match(/([\d.]+)[–-]([\d.]+)%/);
         $('percent-low').value=p?p[1]:'';$('percent-high').value=p?p[2]:'';
-        $('zero').checked=false;
       }
     }
     $('zero-field').hidden=view!=='difference';
@@ -211,7 +212,12 @@
       const palette=paletteChoices.find(p=>p.id===$('palette').value);
       if(!palette)throw Error('Select an available palette.');E.colorMapper(palette);
       const previous=styles[styleKey()];
-      if(previous.appearance&&!rangeChanged){
+      if(rangeChanged==='zero'&&Number.isFinite(previous.appearance?.lo)&&Number.isFinite(previous.appearance?.hi)&&!/[\d.]+[–-][\d.]+%/.test(previous.appearance.rangeLabel||'')){
+        const a=previous.appearance,zero=view==='difference'&&$('zero').checked;
+        const {lo,hi}=E.stretch([a.lo,a.hi],0,100,zero);
+        previous.appearance={...a,lo,hi,zeroCentered:zero,rangeLabel:'Custom value limits'+(zero?' · zero-centred limits':'')};
+        previous.zero=zero;
+      }else if(previous.appearance&&!rangeChanged){
         previous.appearance={...previous.appearance,style:{stops:palette.stops,reverse:!!$('reverse').checked!==!!palette.reverse,...(palette.builtin?{builtin:palette.builtin}:{})},paletteName:palette.name};
       }else{
         if(!binaryMask())E.stretch(result.ranks[styleKey()],lower,upper,view==='difference'&&$('zero').checked);
@@ -222,7 +228,8 @@
     }catch(e){epoch++;exportDisabled(true);$('show').disabled=true;status(e.message);}
   }
   for(const id of ['palette','reverse'])$(id).addEventListener('change',()=>updateStyle());
-  for(const id of ['percent-low','percent-high','zero'])$(id).addEventListener('change',()=>updateStyle(true));
+  for(const id of ['percent-low','percent-high'])$(id).addEventListener('change',()=>updateStyle(true));
+  $('zero').addEventListener('change',()=>updateStyle('zero'));
   panel.querySelectorAll('[data-nxc-range]').forEach(b=>b.onclick=()=>{
     if(binaryMask())return;
     const p=b.dataset.nxcRange.split(',');$('percent-low').value=p[0];$('percent-high').value=p[1];updateStyle(true);

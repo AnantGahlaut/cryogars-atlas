@@ -68,6 +68,12 @@ function bridgeHarness(options={}){
     vm.runInContext(template.slice(template.indexOf('const kvRow='),template.indexOf('let infoOpen='))+
       templateFunction('syncShownResolution')+templateFunction('renderInfo'),ctx);
   }
+  if(options.realPrimary){
+    Object.assign(ctx,{bVal:'values',toGL:v=>v,CM:{custom:0,viridis:1},RAMP:{},applyCustomUniforms(){},syncPaletteSettings(){}});
+    ctx.gl.bindBuffer=()=>{};ctx.gl.bufferData=(_target,v)=>{ctx.uploaded=Array.from(v);};
+    for(const k of ['uCmap','uReverse','uDiverging','uAngleKind'])ctx.U[k]=k;
+    vm.runInContext(templateFunction('customRampCss')+templateFunction('setPrimary'),ctx);
+  }
   if(options.withoutAngular)ctx.angularKind=undefined;
   vm.runInContext(fs.readFileSync('viewer_compare/bridge.js','utf8'),ctx);
   return {ctx,api:ctx.window.SnowCompareViewer,stored,uniforms};
@@ -117,6 +123,31 @@ test('temporary legend preserves comparison percentile provenance through tab re
   assert.equal(ctx.$('rangeStateLabel').textContent,'Custom value limits');
   api.show(comparison({rangeLabel:undefined}));
   assert.equal(ctx.$('rangeStateLabel').textContent,'Custom value limits');
+});
+
+test('zero-centred differences keep symmetric effective limits through native legend edits',()=>{
+  const {ctx,api,uniforms}=bridgeHarness({info:true,realPrimary:true});
+  api.show(comparison({zeroCentered:true,lo:-.564,hi:.564}));
+  const key=ctx.primKey,raw=JSON.stringify(ctx.P.arrays[key]);
+  for(const [mode,bounds,want] of [
+    ['robust',[-.564,.220],[-.564,.564]],['detail',[-.2,.1],[-.2,.2]],
+    ['custom',[-4,2],[-4,4]],['full',undefined,[-100,100]],
+    ['robust',[3,3],[-100,100]],['custom',[1e-9,2e-9],[-1e-6,1e-6]],
+  ]){
+    ctx.PREF.rangeModes[key]=mode;ctx.PREF.ranges[key]=bounds;ctx.setPrimary(key);
+    const a=api.appearance('difference');
+    assert.deepEqual([a.lo,a.hi],want);assert.equal(a.zeroCentered,true);
+    assert.deepEqual(Array.from(vm.runInContext('layerRange(primKey)',ctx)),want);
+    assert.deepEqual([uniforms.uLo,uniforms.uHi],want);
+    assert.equal(ctx.$('t1').textContent,'0');assert.equal(uniforms.uDiverging,0);
+    assert.match(ctx.$('rangeStateLabel').textContent,/zero-centred limits/);
+    assert.deepEqual(require('./export').rgb(0,a.lo,a.hi,true),[246,245,240,255]);
+  }
+  assert.equal(JSON.stringify(ctx.P.arrays[key]),raw,'display edits leave packed bounds and samples unchanged');
+  for(const id of ['a','b','difference']){
+    api.show(comparison({id,zeroCentered:id!=='difference',lo:-4,hi:2}));
+    const a=api.appearance(id);assert.deepEqual([a.lo,a.hi],[-4,2]);assert.equal(a.zeroCentered,false);
+  }
 });
 
 test('temporary count correction supports the coverage label in already-built explorers',()=>{

@@ -1281,8 +1281,12 @@ const isDiverging=k=>scientificCmap(k)==="diverging";
 const isCyclic=k=>scientificCmap(k)==="cyclic";
 const layerRange=k=>{
   const L=P.arrays[k], r=PREF.ranges[k];
-  return r&&r.length===2&&isFinite(r[0])&&isFinite(r[1])&&r[1]>r[0]
+  const bounds=r&&r.length===2&&isFinite(r[0])&&isFinite(r[1])&&r[1]>r[0]
     ?r:[L.lo,L.hi];
+  if(L.comparisonZeroCentered){
+    const m=Math.max(Math.abs(bounds[0]),Math.abs(bounds[1]),1e-6);return[-m,m];
+  }
+  return bounds;
 };
 const rangeMode=k=>PREF.rangeModes[k]||(PREF.ranges[k]?"custom":"full");
 const RANGE_STATUS={full:"Colour stretch · full packed range",robust:"Colour stretch · 2nd–98th percentiles",
