@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/cryogars-logo.jpg" alt="CryoGARS" width="140">
+  <img src="assets/cryogars-logo-white.png" alt="CryoGARS" width="300">
 </p>
 
 # SnowEx Field Atlas
