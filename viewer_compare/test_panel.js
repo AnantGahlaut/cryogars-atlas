@@ -30,29 +30,117 @@ function templateFunction(name){
   return template.slice(start,next);
 }
 function bridgeHarness(options={}){
-  const original={w:2,h:2,cell_m:3,label:'Elevation',leaf:'elevation',lo:1,hi:4,unit:'m',b64:'',bits:16};
-  const stored={},P={site:'test',grid:{w:2,h:2,cell_m:3,origin:[100,200],pixel:[3,-3]},identification:{common_crs_epsg:32612},arrays:{dem:original},dem_path:'dem'};
-  const elements=new Map(),element=id=>{if(!elements.has(id))elements.set(id,{value:'',style:{},classList:{toggle(){}}});return elements.get(id);};
-  const ctx={P,G:P.grid,W:2,H:2,DEM:'dem',window:{},primKey:'dem',ovKey:null,active:'dem',glOn:true,infoOpen:false,
-    floats:()=>new Float32Array([1,2,3,4]),cache:new Map(),tabs:[{id:'dem',kind:'layer',key:'dem',pin:true},{id:'timeline',kind:'timeline',pin:true},{id:'details',kind:'details',pin:true}],
+  const original={w:2,h:2,cell_m:3,label:'Elevation',leaf:'elevation',lo:1,hi:4,unit:'m',b64:'',bits:16,valid:2,total:4};
+  const stored={},P={site:'test',grid:{w:2,h:2,cell_m:3,origin:[100,200],pixel:[3,-3],full:[2,2],dem_valid_fraction:.5},identification:{common_crs_epsg:32612},arrays:{dem:original},dem_path:'dem'};
+  const elements=new Map(),element=id=>{if(!elements.has(id))elements.set(id,{value:'',style:{setProperty(){}},classList:{toggle(){}}});return elements.get(id);};
+  if(options.info){
+    // Browser DOM boundary only: renderInfo below remains the real template function.
+    const body=element('iBody');
+    Object.defineProperty(body,'innerHTML',{set(html){
+      this.rows=[...html.matchAll(/<tr><td class='k'>(.*?)<\/td><td class='v'>(.*?)<\/td><\/tr>/gs)]
+        .map(m=>{
+          const value={innerHTML:m[2]};
+          Object.defineProperty(value,'textContent',{get(){return this.innerHTML.replace(/<[^>]*>/g,'');},set(v){this.innerHTML=String(v);}});
+          return {children:[{textContent:m[1].replace(/<[^>]*>/g,'')},value]};
+        });
+    }});
+    body.querySelectorAll=selector=>{assert.equal(selector,'tr');return body.rows;};
+  }
+  const uniforms={};
+  const ctx={P,G:P.grid,W:2,H:2,DEM:'dem',window:{SnowCompareCore:require('./core')},primKey:'dem',ovKey:null,active:'dem',glOn:true,infoOpen:false,
+    values:{},floats:k=>ctx.values[k]||new Float32Array([1,2,3,4]),cache:new Map(),tabs:[{id:'dem',kind:'layer',key:'dem',pin:true},{id:'timeline',kind:'timeline',pin:true},{id:'details',kind:'details',pin:true}],
     PREF:{palettes:{},customs:{},ranges:{},rangeModes:{},reverse:{},savedPalettes:{},typeActive:{}},
     BUILTIN_STOPS:{terrain:[[0,'#000000'],[1,'#ffffff']],viridis:[[0,'#440154'],[1,'#fde725']],diverging:[[0,'#b42d1d'],[.5,'#f6f5f0'],[1,'#1d5aa7']]},
     PALETTE_LABELS:{terrain:'Terrain',viridis:'Viridis',diverging:'Diverging'},
     Uint8Array,Float32Array,Map,Math,Number,btoa:s=>Buffer.from(s,'binary').toString('base64'),
-    setPrimary(k){ctx.primKey=k;},closeLegendEditor(){},renderDetails(){},renderTimeline(){},
-    setOverlay(k){ctx.ovKey=k;},$:element,renderTabs(){},nodeAt:()=>null,
+    setPrimary(k){ctx.primKey=k;ctx.uploaded=Array.from(ctx.floats(k));if(options.info){ctx.syncRangeStatus(k);ctx.renderInfo(k);}ctx.draw();},closeLegendEditor(){},renderDetails(){},renderTimeline(){},
+    setOverlay(k){ctx.ovKey=k;ctx.overlayUploaded=k?Array.from(ctx.floats(k)):null;ctx.draw();},$:element,renderTabs(){},nodeAt:()=>null,
+    draw(){},syncLegendEditor(){},
+    gl:{uniform1i:(k,v)=>{uniforms[k]=v;},uniform1f:(k,v)=>{uniforms[k]=v;}},
+    U:Object.fromEntries(['uMaskBinary','uMaskBinary2','uLo','uHi','uLo2','uHi2'].map(k=>[k,k])),
+    DOM:{meta:{c:'#ffffff'}},fmt:String,esc:String,levels:[{w:2,h:2,cell:3}],curLevel:0,
     PREF_KEY:'preferences',PREF_WINDOW_PREFIX:'prefs:',localStorage:{setItem(k,v){stored[k]=v;}}};
   vm.createContext(ctx);
   vm.runInContext(template.slice(template.indexOf('function productKind('),template.indexOf('function customRampCss(')),ctx);
   vm.runInContext(template.slice(template.indexOf('function savePrefs('),template.indexOf('applyUiPrefs(false);')),ctx);
   vm.runInContext(templateFunction('activate')+templateFunction('openLayer')+templateFunction('closeTab').split('/* ================= tree')[0],ctx);
+  if(options.info){
+    vm.runInContext(template.slice(template.indexOf('const kvRow='),template.indexOf('let infoOpen='))+
+      templateFunction('syncShownResolution')+templateFunction('renderInfo'),ctx);
+  }
   if(options.withoutAngular)ctx.angularKind=undefined;
   vm.runInContext(fs.readFileSync('viewer_compare/bridge.js','utf8'),ctx);
-  return {ctx,api:ctx.window.SnowCompareViewer,stored};
+  return {ctx,api:ctx.window.SnowCompareViewer,stored,uniforms};
 }
 const comparison=(overrides={})=>({id:'difference',label:'Difference',unit:'m',grid:{w:2,h:2,dx:3,dy:-3,left:100,top:200},
   values:new Float32Array([-50,0,100,NaN]),lo:-10,hi:20,cmap:'diverging',
   style:{stops:[[0,'#ff0000'],[1,'#0000ff']],reverse:false},paletteName:'Saved · Red blue',rangeLabel:'Custom 25–75% stretch',...overrides});
+
+test('temporary Info counts use analysis-grid cells and leave ordinary metrics unchanged',()=>{
+  const {ctx,api}=bridgeHarness({info:true});ctx.setPrimary('dem');
+  const originalRows=JSON.stringify(ctx.$('iBody').rows),originalRange=ctx.$('rangeStateLabel').textContent;
+  for(const values of [[1,NaN,NaN,NaN],[1,2,3,NaN],[1,2,3,4]]){
+    api.show(comparison({values:new Float32Array(values)}));
+    const rows=ctx.$('iBody').rows,shared=rows.find(r=>r.children[0].textContent==='shared cells');
+    assert.ok(shared,'temporary row identifies counts, not DEM coverage');
+    const valid=values.filter(Number.isFinite).length;
+    assert.equal(shared.children[1].textContent,`${valid} / 4`);
+    assert.match(shared.children[1].title,/comparison grid/i);
+    assert.match(shared.children[1].title,/not native/i);
+    assert.doesNotMatch(shared.children[1].innerHTML||'',/meter|150\.0%/);
+    const validRow=rows.find(r=>r.children[0].textContent.startsWith('valid'));
+    assert.match(validRow.children[1].innerHTML,new RegExp(`<b>${valid*25}\\.0%<`));
+  }
+  ctx.openLayer('dem');
+  assert.equal(JSON.stringify(ctx.$('iBody').rows),originalRows);
+  assert.equal(ctx.$('rangeStateLabel').textContent,originalRange);
+});
+
+test('temporary legend preserves comparison percentile provenance through tab return and range edits',()=>{
+  const {ctx,api}=bridgeHarness({info:true});
+  const exact='Robust 2–98% stretch · zero-centred limits';
+  api.show(comparison({rangeLabel:exact}));const key=ctx.primKey,tab=ctx.active;
+  assert.equal(ctx.$('rangeStateLabel').textContent,exact);
+  assert.match(ctx.$('rangeState').title,/comparison/i);
+  ctx.openLayer('dem');ctx.activate(tab);
+  assert.equal(ctx.$('rangeStateLabel').textContent,exact);
+  ctx.PREF.ranges[key]=[-5,15];ctx.setPrimary(key);
+  assert.equal(ctx.$('rangeStateLabel').textContent,'Custom value limits');
+  for(const mode of ['robust','detail']){
+    ctx.PREF.rangeModes[key]=mode;ctx.setPrimary(key);
+    assert.match(ctx.$('rangeStateLabel').textContent,/3D legend.*Difference terrain samples \(sampled ranks\)/);
+    assert.notEqual(ctx.$('rangeStateLabel').textContent,exact);
+  }
+  ctx.PREF.rangeModes[key]='full';delete ctx.PREF.ranges[key];ctx.setPrimary(key);
+  assert.equal(ctx.$('rangeStateLabel').textContent,'Full 0–100% stretch');
+  ctx.PREF.rangeModes[key]='unknown';ctx.setPrimary(key);
+  assert.equal(ctx.$('rangeStateLabel').textContent,'Custom value limits');
+  api.show(comparison({rangeLabel:undefined}));
+  assert.equal(ctx.$('rangeStateLabel').textContent,'Custom value limits');
+});
+
+test('temporary count correction supports the coverage label in already-built explorers',()=>{
+  const {ctx,api}=bridgeHarness({info:true}),renderInfo=ctx.renderInfo;
+  ctx.renderInfo=k=>{
+    renderInfo(k);
+    ctx.$('iBody').rows.find(r=>r.children[0].textContent==='valid-cell count relative to DEM').children[0].textContent='coverage';
+  };
+  api.show(comparison());
+  const rows=ctx.$('iBody').rows;
+  assert.equal(rows.find(r=>r.children[0].textContent==='shared cells').children[1].textContent,'3 / 4');
+  assert.equal(rows.some(r=>r.children[0].textContent==='coverage'),false);
+  ctx.openLayer('dem');
+  assert.ok(ctx.$('iBody').rows.some(r=>r.children[0].textContent==='coverage'));
+});
+
+test('a comparison with no shared finite cells leaves original Info and legend intact',()=>{
+  const {ctx,api}=bridgeHarness({info:true});ctx.setPrimary('dem');
+  const originalRows=JSON.stringify(ctx.$('iBody').rows),originalRange=ctx.$('rangeStateLabel').textContent;
+  assert.throws(()=>api.show(comparison({values:new Float32Array(4).fill(NaN)})),/no finite values/);
+  assert.equal(ctx.primKey,'dem');assert.equal(api.selection().available,false);
+  assert.equal(JSON.stringify(ctx.$('iBody').rows),originalRows);
+  assert.equal(ctx.$('rangeStateLabel').textContent,originalRange);
+});
 
 test('selection observers follow actual layer and flat tab activation without discarding the comparison',()=>{
   const {ctx,api}=bridgeHarness(),events=[];
@@ -168,6 +256,28 @@ test('appearance follows original legend palette, reversal and range modes',()=>
   shown=api.appearance('difference');assert.deepEqual([shown.lo,shown.hi],[-15,15]);
 });
 
+test('unusable percentile limits disclose full-range fallback and retain it after restyling',()=>{
+  for(const mode of ['robust','detail'])for(const bounds of [undefined,null,[],[4],[3,3],[8,-2],[NaN,8],[-8,Infinity],[1,2,3]]){
+    const {ctx,api}=bridgeHarness({info:true});api.show(comparison());
+    ctx.PREF.rangeModes[ctx.primKey]=mode;ctx.PREF.ranges[ctx.primKey]=bounds;ctx.setPrimary(ctx.primKey);
+    const shown=api.appearance('difference');
+    assert.deepEqual([shown.lo,shown.hi],[-50,100]);
+    assert.match(shown.rangeLabel,/full.*fallback/i,`${mode}: ${String(bounds)}`);
+    assert.doesNotMatch(shown.rangeLabel,/Robust 2–98%|Detail 10–90%/);
+    assert.equal(ctx.$('rangeStateLabel').textContent,shown.rangeLabel);
+    api.show(comparison(shown));
+    assert.equal(api.appearance('difference').rangeLabel,shown.rangeLabel);
+  }
+  for(const mode of ['robust','detail'])for(const bounds of [[-5,15],['-5','15']]){
+    const {ctx,api}=bridgeHarness();api.show(comparison());
+    ctx.PREF.rangeModes[ctx.primKey]=mode;ctx.PREF.ranges[ctx.primKey]=bounds;
+    const shown=api.appearance('difference');
+    assert.deepEqual([shown.lo,shown.hi],bounds);
+    assert.match(shown.rangeLabel,mode==='robust'?/Robust 2–98%/:/Detail 10–90%/);
+    assert.doesNotMatch(shown.rangeLabel,/fallback/i);
+  }
+});
+
 test('new renderer receives angular A and B quantities while signed differences stay scalar',()=>{
   const {ctx,api}=bridgeHarness();
   ctx.P.arrays.aspect={leaf:'aspect',unit:'deg'};ctx.P.arrays.phase={leaf:'int_phase',unit:'rad'};
@@ -232,3 +342,50 @@ test('PNG colour mapping treats NaN as transparent and centers differences on ze
   assert.deepEqual(E.rgb(-2,-2,2,true),[180,45,29,255]);
   assert.deepEqual(E.rgb(2,-2,2,true),[29,90,167,255]);
 });
+
+test('mask options reclassify original fractions and remain isolated by layer',()=>{
+  const {ctx,api,uniforms}=bridgeHarness();
+  for(const key of ['maskA','maskB']){
+    ctx.P.arrays[key]={...ctx.P.arrays.dem,leaf:'coherence_mask',label:key,unit:'',lo:.2,hi:.8};
+    ctx.values[key]=new Float32Array([.2,.5,.8,NaN]);
+  }
+  assert.equal(typeof api.setMaskOptions,'function');
+  assert.deepEqual({...api.maskOptions('maskA')},{mode:'average',cutoff:.5});
+  ctx.openLayer('maskA');const original=Array.from(ctx.floats('maskA'));
+  ctx.PREF.ranges.maskA=[.7,.8];
+  api.setMaskOptions('maskA',{mode:'binary',cutoff:.5});
+  assert.deepEqual(ctx.uploaded,[0,1,1,NaN]);
+  assert.equal(uniforms.uMaskBinary,1);assert.equal(uniforms.uLo,0);assert.equal(uniforms.uHi,1);
+  api.setMaskOptions('maskA',{mode:'binary',cutoff:.75});
+  assert.deepEqual(ctx.uploaded,[0,0,1,NaN]);
+  ctx.openLayer('maskB');assert.equal(uniforms.uMaskBinary,0);
+  assert.deepEqual(Array.from(ctx.floats('maskB')),original);
+  api.setMaskOptions('maskA',{mode:'average',cutoff:.75});
+  assert.deepEqual(Array.from(ctx.floats('maskA')),original);
+  assert.deepEqual(Array.from(ctx.values.maskA),original);
+  const copied=api.maskOptions('maskA');copied.cutoff=0;
+  assert.equal(api.maskOptions('maskA').cutoff,.75);
+  assert.throws(()=>api.setMaskOptions('maskA',{mode:'binary',cutoff:NaN}),/cutoff/i);
+  assert.equal(api.maskOptions('maskA').cutoff,.75);
+  assert.equal(api.maskOptions('dem'),null);
+  assert.throws(()=>api.setMaskOptions('dem',{mode:'binary',cutoff:.5}),/mask/i);
+});
+
+test('overlay mask flags reset and temporary transitions retain categorical bounds',()=>{
+  const {ctx,api,uniforms}=bridgeHarness();
+  ctx.P.arrays.mask={...ctx.P.arrays.dem,leaf:'coherence_mask',unit:''};
+  ctx.values.mask=new Float32Array([0,.5,1,NaN]);
+  api.setMaskOptions('mask',{mode:'binary',cutoff:1});ctx.setOverlay('mask');
+  assert.deepEqual(ctx.overlayUploaded,[0,0,1,NaN]);assert.equal(uniforms.uMaskBinary2,1);
+  ctx.setOverlay(null);assert.equal(uniforms.uMaskBinary2,0);
+  api.show(comparison({maskKey:'mask',maskCategory:'transition',values:new Float32Array([-1,0,1,NaN]),lo:-1,hi:1}));
+  assert.equal(uniforms.uMaskBinary,2);
+  ctx.PREF.ranges[ctx.primKey]=[.2,.3];ctx.draw();
+  assert.equal(uniforms.uLo,-1);assert.equal(uniforms.uHi,1);
+  assert.deepEqual([api.appearance('difference').lo,api.appearance('difference').hi],[-1,1]);
+  assert.equal(api.maskTargets()[0].key,'mask');
+  ctx.openLayer('dem');assert.equal(uniforms.uMaskBinary,0);
+  assert.deepEqual(Array.from(api.maskTargets()),[]);
+});
+
+module.exports={bridgeHarness};

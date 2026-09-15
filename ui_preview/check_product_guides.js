@@ -1,5 +1,7 @@
-/* Scientific help-content checks against every existing exported payload.
- * This does not execute WebGL or claim to be a browser interaction test.
+/* Compatibility checks for the inactive legacy product_guide.js helper.
+ * Metadata fixtures come from existing exports. This is not an active-template
+ * test or validation of current scientific calculations; use check_workspace,
+ * check_dem_notes and the scientific/renderer suites for those contracts.
  */
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),dir=path.resolve(process.argv[2]||path.join(root,'viewer'));
@@ -26,33 +28,27 @@ for(const file of fs.readdirSync(dir).filter(f=>f.endsWith('_explorer.html'))){
     if(g.kind==='coherence_mask'){
       assert(g.meaning.join(' ').includes(`≥ ${attrs.coherence_threshold}`));
       assert(g.context.some(([k])=>k==='Radar date pair'));
-      assert(g.calculation.equations.some(s=>s.includes('mask = 255')));
       assert(g.calculation.variables.some(([k,v])=>k==='τ'&&v.includes(String(attrs.coherence_threshold))));
     }
     if(g.kind==='forest_cover_fraction'){
       assert(g.context.some(([k,v])=>k==='Derived from'&&v===attrs.derived_from));
       assert(g.context.some(([k,v])=>k==='Nominal window'&&v===`${attrs.window_m} m`));
       assert(g.cautions.some(c=>c.includes('33 m')));
-      assert(g.calculation.equations.some(s=>s.includes('Σj∈Wi hit(j) / Σj∈Wi valid(j)')));
       assert(g.calculation.variables.some(([k,v])=>k==='hc'&&v.includes(String(attrs.canopy_height_threshold_m))));
     }
     if(g.kind==='local_incidence_angle'){
       assert(g.context.some(([k])=>k==='Track heading'));
-      assert(g.cautions.some(c=>c.includes('not apply')));
-      assert(g.calculation.equations.some(s=>s.includes('ℓ · n')));
-      assert(g.calculation.equations.some(s=>s.includes('whole-site finite mean')));
-    }
-    if(g.kind==='aspect'){
-      assert(g.cautions.some(c=>c.includes('north/south')));
-      assert(g.calculation.equations.some(s=>s.includes('90 − deg(atan2(gy, −gx))')));
+      const restricted=['projected_peg_track_half_plane_v1','projected_peg_track_half_plane_v2'].includes(attrs.look_side_mask_method);
+      assert(g.cautions.some(c=>c.includes(restricted?'retain the declared look side':'No look-side restriction is recorded')));
     }
     if(g.kind==='cor')assert(g.calculation.label.includes('upstream'));
-    if(g.kind==='magnitude')assert(g.calculation.equations.includes('mblock = nanmeanj∈B(mj)'));
-    if(g.kind==='wrapped_phase')assert(g.calculation.equations.includes('φB = atan2(Im(ĪB), Re(ĪB))'));
     if(g.kind==='slope'){
       const sourceNote=g.context.find(([k])=>k==='Terrain note')?.[1]||'';
       siteContexts.add(JSON.stringify(g.context.filter(([k])=>k.startsWith('Terrain'))));
-      if(P.site==='grand_mesa')assert(/photogram/i.test(sourceNote),'Grand Mesa must not be relabelled LiDAR');
+      const recorded=P.tree.find(n=>n.path===P.dem_path)?.attrs.source_note||'';
+      assert.equal(sourceNote,recorded,'legacy helper must preserve the supplied DEM provenance');
+      if(P.site==='grand_mesa')assert(/LiDAR-derived snow-off reference DTM/i.test(sourceNote),
+        'Grand Mesa uses the provider-corrected LiDAR DTM provenance');
     }
   }
 }
@@ -62,4 +58,4 @@ for(const kind of ['slope','aspect','forest_cover_fraction','coherence_mask','lo
 scope.P={site:'test',identification:{site_name:'Test'},grid:{res_m:3},dem_path:'dem',tree:[],arrays:{mask:{source:'coherence_mask',w:1,h:1,cell_m:3}}};scope.key='mask';
 assert(vm.runInContext('productGuide(P,key).meaning[0]',scope).includes('No numeric cutoff'));
 assert(vm.runInContext('productGuide(P,key).calculation.variables[1][1]',scope).includes('Not recorded'));
-console.log(`PASS: ${total} product guides; site-specific metadata, source dates, threshold semantics and scientific cautions. ${JSON.stringify(counts)}`);
+console.log(`PASS: ${total} inactive legacy guide results; site metadata, corrected DEM provenance and threshold semantics (not current scientific/UI validation). ${JSON.stringify(counts)}`);

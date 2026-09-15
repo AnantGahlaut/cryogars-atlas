@@ -97,13 +97,13 @@
           </div>
           <div class="nxc-fields"><label>Lower percentile (%)<input id="nxc-percent-low" type="number" min="0" max="100" step="any" value="0"></label><label>Upper percentile (%)<input id="nxc-percent-high" type="number" min="0" max="100" step="any" value="100"></label></div>
           <label id="nxc-zero-field"><input id="nxc-zero" type="checkbox" checked>Keep difference limits symmetric around zero</label>
-          <p class="nxc-muted">Colours only: tails saturate at the selected limits. No samples are removed and statistics stay unchanged. A/B share a colour range. Symmetric mode expands percentile bounds to ± the larger magnitude.</p>
+          <p class="nxc-muted">Colours only: tails saturate at the selected limits. No samples are removed and statistics stay unchanged. A/B share a colour range. Symmetric mode expands percentile bounds to ± the larger magnitude. The 0–1 mask preview uses fixed state colours; percentile and zero controls are disabled.</p>
         </fieldset>
         <p id="nxc-summary"></p>
         <div class="nxc-row"><button id="nxc-show" type="button">Return to 3D</button><button id="nxc-export" type="button">Export 2D PNG</button></div>
         <p class="nxc-muted">PNG map pixels match the analysis grid, independent of zoom or terrain detail. White/transparent cells contain no shared data. PNG follows the comparison's colours and range, including edits in the existing 3D legend, without terrain lighting.</p>
       </div>
-      <details><summary>What the calculation means</summary><p class="nxc-muted">Linear products: Δ = B − A. Aspect: Δ = ((B − A + 180) mod 360) − 180 degrees. Wrapped phase: the same shortest signed difference with π and 2π. Masks: threshold each preview at 0.5, then subtract (−1 = lost usable, 0 = unchanged, +1 = gained usable). These mask previews can already contain averaged fractions.</p><p class="nxc-muted">Mean = ΣΔ/n; MAE = Σ|Δ|/n; RMSE = √(ΣΔ²/n). These describe disagreement, not accuracy unless A is appropriate ground truth. No vertical-datum conversion is performed. Scientific metadata, timestamps, and acquisition compatibility still need review.</p></details>
+      <details><summary>What the calculation means</summary><p class="nxc-muted">Linear products: Δ = B − A. Aspect: Δ = ((B − A + 180) mod 360) − 180 degrees. Wrapped phase: the same shortest signed difference with π and 2π. Masks: Average compares the original passing fractions. The 0–1 preview applies A's selected cutoff to both original fractions, then subtracts the states (−1 = lost pass, 0 = unchanged, +1 = gained pass). A fraction at or above the cutoff passes; missing blocks stay blank. Change A's mask preview controls in the terrain legend to update both inputs.</p><p class="nxc-muted">Mean = ΣΔ/n; MAE = Σ|Δ|/n; RMSE = √(ΣΔ²/n). These describe disagreement, not accuracy unless A is appropriate ground truth. No vertical-datum conversion is performed. Scientific metadata, timestamps, and acquisition compatibility still need review.</p></details>
     </section>
   </div>
 </dialog>

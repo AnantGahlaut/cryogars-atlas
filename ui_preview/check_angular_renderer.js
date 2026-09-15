@@ -64,6 +64,7 @@ function checkShaders(VS, FS) {
       attribute('aVal2', 1, options.values2 || constant(-1e30));
       for (const [name, value] of Object.entries({
         uAngleKind: 0, uAngleKind2: 0, uCmap: 10, uCmap2: 10,
+        uMaskBinary: 0, uMaskBinary2: 0,
         uReverse: 0, uReverse2: 0, uDiverging: 0, uDiverging2: 0,
         uCustomN: 2, uCustomN2: 2, uWire: 0,
       })) gl.uniform1i(uniform(name), options[name] ?? value);
@@ -95,6 +96,42 @@ function checkShaders(VS, FS) {
     }
     const clear = [0,0,0,0], base = render(), nodata = -1e30;
     for (const slot of ['primary', 'overlay']) {
+      const undefinedScalar = slot === 'primary' ? clear : base;
+      const scalar = values => field(slot, 0, values);
+      const suffix = slot === 'primary' ? '' : '2';
+      const mask = (values, mode) => ({...scalar(values),
+        ['uMaskBinary' + suffix]: mode, ['uLo' + suffix]: mode === 2 ? -1 : 0, ['uHi' + suffix]: 1});
+      for (const [name, values, mode, expected, x] of [
+        ['binary below threshold', [0,1,1], 1, 0, 3],
+        ['binary inclusive threshold', [0,1,1], 1, 1, 4],
+        ['binary above threshold', [0,1,1], 1, 1, 5],
+        ['binary missing corner preserves finite class', [nodata,1,1], 1, 1, 5],
+        ['binary missing corner zero is valid', [nodata,0,0], 1, 0, 5],
+        ['binary smooth mode stays continuous', [0,1,1], 0, 5/9, 5],
+        ['transition negative', [-1,-1,0], 2, -1, 5],
+        ['transition zero', [-1,1,0], 2, 0, 5],
+        ['transition positive', [1,1,0], 2, 1, 5],
+        ['transition missing preserves negative class', [nodata,-1,-1], 2, -1, 5],
+      ]) check(slot + ' mask ' + name, render(mask(values, mode), x),
+        render({...mask(constant(expected), mode), ['uMaskBinary' + suffix]: 0}));
+      check(slot + ' binary all missing', render(mask(constant(nodata), 1)), undefinedScalar);
+      check(slot + ' transition all missing', render(mask(constant(nodata), 2)), undefinedScalar);
+      check(slot + ' scalar missing corner renormalizes finite weights',
+        render(scalar([nodata,72,288])), render(scalar(constant(169.2))));
+      check(slot + ' scalar two missing corners with sufficient coverage',
+        render(scalar([144,nodata,nodata]), 3), render(scalar(constant(144))));
+      check(slot + ' scalar coverage below half',
+        render(scalar([nodata,144,144]), 3), undefinedScalar);
+      check(slot + ' scalar coverage exactly half',
+        render(scalar([nodata,144,144]), 4),
+        slot === 'primary' ? render(scalar(constant(144))) : base);
+      check(slot + ' scalar all missing', render(scalar(constant(nodata))), undefinedScalar);
+      for (const invalid of [NaN, Infinity, -Infinity]) {
+        check(slot + ' scalar nonfinite corner ' + invalid,
+          render(scalar([invalid,72,288])), render(scalar(constant(169.2))));
+        check(slot + ' scalar all nonfinite ' + invalid,
+          render(scalar(constant(invalid))), undefinedScalar);
+      }
       for (const kind of [1, 2]) {
         const label = slot + ' ' + (kind === 1 ? 'aspect' : 'phase');
         const seam = kind === 1 ? [359,1,1] : [179,-179,-179].map(value => value * Math.PI / 180);

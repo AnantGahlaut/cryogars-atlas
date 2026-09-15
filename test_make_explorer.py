@@ -49,6 +49,98 @@ class DeclaredNodataTests(unittest.TestCase):
         self.assertEqual(packed["valid"], 4)
 
 
+class DisplayMetadataTests(unittest.TestCase):
+    def test_full_radar_labels_distinguish_pair_line_pol_and_complex_quantity(self):
+        cases = [
+            ('science/UAVSAR/20200201_20200202/LOWMAN23205/HH/int', 'int', '∠phase',
+             'Interferogram ∠phase  ·  2020-02-01 → 2020-02-02  ·  LOWMAN23205  ·  HH'),
+            ('science/UAVSAR/20201231_20210102/LOWMAN05208/VV/amp1', 'amp1', '',
+             'Amplitude, pass 1  ·  2020-12-31 → 2021-01-02  ·  LOWMAN05208  ·  VV'),
+            ('science/UAVSAR/20200201_20200202/LOWMAN23205/GEOMETRY/incidence_angle_flat',
+             'incidence_angle_flat', '',
+             'incidence_angle_flat  ·  2020-02-01 → 2020-02-02  ·  LOWMAN23205'),
+            ('science/UAVSAR/AMPLITUDE_GRD/BANNER_CUTFROMLOWMAN05208_20210303_20210310/HV/amp2',
+             'amp2', '',
+             'Amplitude, pass 2  ·  2021-03-03 → 2021-03-10  ·  BANNER_CUTFROMLOWMAN05208  ·  HV'),
+            ('science/UAVSAR/DEM_TIFF/LOWMAN23205_20200213_20200213/elevation',
+             'elevation', '', 'Elevation  ·  2020-02-13  ·  LOWMAN23205'),
+            ('science/UAVSAR/DEM_TIFF/LOWMAN23205_20200213/elevation',
+             'elevation', '', 'Elevation  ·  2020-02-13  ·  LOWMAN23205'),
+        ]
+        for path, leaf, suffix, label in cases:
+            with self.subTest(path=path):
+                self.assertEqual(explorer.describe(path, leaf, suffix)['label'], label)
+        lidar = explorer.describe('science/LIDAR/VH/20200218/veg_height', 'veg_height')
+        self.assertEqual(lidar['label'], 'Vegetation height  ·  2020-02-18')
+        self.assertEqual(lidar['pol'], '')
+        phase = explorer.describe(cases[0][0], 'int', '∠phase')
+        magnitude = explorer.describe(cases[0][0], 'int', '|magnitude|')
+        self.assertEqual(phase['short'], 'Interferogram ∠phase')
+        self.assertNotEqual(phase['label'], magnitude['label'])
+
+    def test_export_serializes_source_units_and_angular_fallbacks_without_changing_values(self):
+        import h5py
+
+        cases = {
+            'science/LIDAR/DERIVED/aspect': ({'units': 'degrees clockwise from north'}, '°'),
+            'science/LIDAR/DERIVED/slope': ({'units': 'degrees'}, '°'),
+            'science/UAVSAR/20200201_20200202/line/GEOMETRY/incidence_angle_flat': ({}, '°'),
+            'science/UAVSAR/20200201_20200202/line/GEOMETRY/local_incidence_angle':
+                ({'units': np.bytes_('radians')}, 'rad'),
+            'science/UAVSAR/20200201_20200202/line/HH/amp1': ({}, ''),
+            'science/UAVSAR/20200201_20200202/line/HH/amp2': ({'units': 'linear amplitude'}, 'linear amplitude'),
+            'science/UAVSAR/20200201_20200202/line/HH/coherence_mask':
+                ({'units': '1 = usable, 0 = decorrelated, 255 = nodata'}, ''),
+            'science/LIDAR/DERIVED/forest_cover_fraction_20200218': ({'units': 'fraction, 0-1'}, ''),
+        }
+        complex_cases = {
+            'science/UAVSAR/20200201_20200202/line/HH/int':
+                ({'units': 'complex components', 'magnitude_units': np.bytes_('linear power'),
+                  'phase_units': 'degrees'}, 'linear power'),
+            'science/UAVSAR/20200201_20200202/line/VV/int': ({'units': 'complex components'}, ''),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'metadata.enriched.h5'
+            with h5py.File(source, 'w') as archive:
+                archive.create_group('identification').attrs.update(
+                    common_grid_shape=(2, 2), common_grid_transform=(3, 0, 0, 0, -3, 6),
+                    common_grid_resolution_m=3, site_name='Metadata')
+                archive.create_dataset(explorer.DEM_PATH, data=np.full((2, 2), 2000., dtype='float32'))
+                for path, (attrs, _) in cases.items():
+                    archive.create_dataset(path, data=np.full((2, 2), 0.5, dtype='float32')).attrs.update(attrs)
+                for path, (attrs, _) in complex_cases.items():
+                    archive.create_dataset(path, data=np.full((2, 2), 3 + 4j, dtype='complex64')).attrs.update(attrs)
+            before = source.read_bytes()
+            args = SimpleNamespace(terrain_stride=1, stride=1, viewer_dir=root / 'viewer',
+                                   template=Path(explorer.__file__).with_name('explorer_template.html'))
+            code, _ = explorer.build_site('metadata', source, args, ['metadata'])
+            self.assertEqual(code, 0)
+            payload = json.loads(PAYLOAD.search((args.viewer_dir / 'metadata_explorer.html').read_text(encoding='utf-8'))[1])
+            self.assertEqual(source.read_bytes(), before)
+        compact = compact_metadata(payload)
+        nodes = {node['path']: node for node in payload['tree']}
+        for path, (attrs, unit) in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(payload['arrays'][path]['unit'], unit)
+                self.assertEqual(compact['layers'][path]['unit'], unit)
+                self.assertEqual(payload['arrays'][path]['lo'], 0.5)
+                for key, value in attrs.items():
+                    self.assertEqual(nodes[path]['attrs'][key], explorer.attr_to_json(value))
+
+        for path, (attrs, unit) in complex_cases.items():
+            with self.subTest(path=path):
+                magnitude = payload['arrays'][path + ' |magnitude|']
+                phase = payload['arrays'][path + ' ∠phase']
+                self.assertEqual(magnitude['unit'], unit)
+                self.assertEqual(compact['layers'][path + ' |magnitude|']['unit'], unit)
+                self.assertEqual(phase['unit'], 'rad')
+                self.assertAlmostEqual(magnitude['lo'], 5.0)
+                self.assertAlmostEqual(phase['lo'], 0.927295218, places=6)
+                for key, value in attrs.items():
+                    self.assertEqual(nodes[path]['attrs'][key], explorer.attr_to_json(value))
+
+
 class AspectExportTests(unittest.TestCase):
     def test_real_export_averages_aspect_circularly_and_preserves_other_products(self):
         import h5py

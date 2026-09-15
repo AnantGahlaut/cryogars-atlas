@@ -1,8 +1,8 @@
 """Tiny synthetic checks of the documented current methods; no archive I/O.
 
 Extract only the named functions from the generator AST, avoiding its CLI and
-archive pipeline. These tests deliberately expose, rather than correct, current
-stored-aspect and nominal-window limitations documented in the viewer.
+archive pipeline. These tests cover corrected downhill aspect and the retained
+nominal-window behavior documented in the viewer.
 Circular display averaging tests assert the corrected SNEX-002 behavior.
 """
 import ast
@@ -18,18 +18,17 @@ from make_explorer import block_mean, block_circular_mean_degrees, quantise
 
 source = ast.parse(Path(__file__).with_name('enrich_hdf5.py').read_text(encoding='utf-8'))
 namespace = {'math': math}
-names = {'slope_aspect', 'box_fraction', 'surface_normals', 'local_incidence'}
+names = {'slope_aspect', 'box_fraction', 'surface_normals', 'local_incidence', 'projected_peg_track'}
 module = ast.Module(body=[n for n in source.body if isinstance(n, ast.FunctionDef) and n.name in names], type_ignores=[])
 exec(compile(module, 'isolated_enrichment_methods', 'exec'), namespace)
 
 
 class ScientificMethodTests(unittest.TestCase):
-    def test_slope_and_confirmed_aspect_convention(self):
+    def test_slope_and_downhill_aspect_convention(self):
         north_rising = np.repeat(np.arange(6, -1, -1)[:, None], 7, axis=1).astype(float) * 3
         slope, aspect = namespace['slope_aspect'](north_rising, 3)
         self.assertAlmostEqual(float(slope[3, 3]), 45)
-        # Documents current behavior; this is NOT the downhill bearing (180).
-        self.assertEqual(float(aspect[3, 3]), 0)
+        self.assertEqual(float(aspect[3, 3]), 180)
         _, flat = namespace['slope_aspect'](np.ones((5, 5)), 3)
         self.assertTrue(np.isnan(flat).all())
 
@@ -40,14 +39,23 @@ class ScientificMethodTests(unittest.TestCase):
         self.assertAlmostEqual(float(f[10, 10]), 1 / 121)
         self.assertTrue(np.isnan(namespace['box_fraction'](hit, ~valid, 10)).all())
 
-    def test_all_cardinal_aspect_cases_document_current_not_corrected_values(self):
+    def test_eight_downhill_aspect_bearings(self):
         rows, cols = np.indices((7, 7), dtype=float)
-        for dem, current, downhill in [(-rows * 3, 0, 180), (cols * 3, 270, 270),
-                                       (rows * 3, 180, 0), (-cols * 3, 90, 90)]:
-            slope, aspect = namespace['slope_aspect'](dem, 3)
-            self.assertAlmostEqual(float(slope[3, 3]), 45)
-            self.assertAlmostEqual(float(aspect[3, 3]), current)
-            self.assertAlmostEqual((180 - float(aspect[3, 3])) % 360, downhill)
+        for bearing in range(0, 360, 45):
+            for gradient in (0.1, 1., 3.):
+                with self.subTest(bearing=bearing, gradient=gradient):
+                    # A plane descends toward the requested east/north bearing.
+                    dem = gradient * (-cols * 3 * math.sin(math.radians(bearing))
+                                      + rows * 3 * math.cos(math.radians(bearing)))
+                    slope, aspect = namespace['slope_aspect'](dem, 3)
+                    self.assertAlmostEqual(float(slope[3, 3]), math.degrees(math.atan(gradient)), places=5)
+                    self.assertAlmostEqual(float(aspect[3, 3]), bearing, places=4)
+
+    def test_float32_aspect_rounding_never_emits_360(self):
+        rows, cols = np.indices((7, 7), dtype=float)
+        _, aspect = namespace['slope_aspect'](rows * 3 + cols * 3e-9, 3)
+        self.assertEqual(float(aspect[3, 3]), 0.)
+        self.assertTrue(((aspect >= 0) & (aspect < 360)).all())
 
     def test_aspect_sine_cosine_encoding_preserves_wrap(self):
         theta = np.deg2rad([359., 0.])
@@ -115,7 +123,7 @@ class ScientificMethodTests(unittest.TestCase):
         f = namespace['box_fraction'](valid, valid, 10)
         self.assertEqual(float(f[5, 5]), 1)
 
-    def test_flat_incidence_and_unused_look_argument(self):
+    def test_flat_incidence_respects_look_side(self):
         # Unit-test track/vector math with a fixed projected peg. This does not
         # validate pyproj's geographic transform or require the archive runtime.
         east, north = 0., 0.
@@ -123,12 +131,15 @@ class ScientificMethodTests(unittest.TestCase):
         dem = np.full((5, 5), 2000.)
         transform = (3, 0, east - 7.5, 0, -3, north + 7.5)
         args = (dem, transform, 32612, 44, -115, 0, 12000)
-        with patch.dict('sys.modules', {'pyproj': SimpleNamespace(Transformer=transformer)}):
+        with patch.dict(namespace, {'projected_peg_track': lambda *a: (east, north, 0.)}):
             local, flat = namespace['local_incidence'](*args, 'Left')
             right, _ = namespace['local_incidence'](*args, 'Right')
         np.testing.assert_allclose(local, flat, atol=1e-5)
-        np.testing.assert_array_equal(local, right)
-        self.assertAlmostEqual(float(local[2, 2]), 0, places=5)
+        self.assertTrue(np.isfinite(local[:, :2]).all())
+        self.assertTrue(np.isnan(local[:, 2:]).all())
+        self.assertTrue(np.isnan(right[:, :3]).all())
+        self.assertTrue(np.isfinite(right[:, 3:]).all())
+        np.testing.assert_allclose(local[:, :2], right[:, :2:-1], atol=1e-5)
 
     def test_complex_phase_and_magnitude_are_distinct_averages(self):
         angles = np.deg2rad(np.array([[179., -179.], [179., -179.]]))

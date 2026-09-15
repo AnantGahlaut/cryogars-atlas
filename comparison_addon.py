@@ -11,6 +11,9 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from build_provenance import capture_sources
+
+_SOURCE_SNAPSHOT = capture_sources(__file__)
 
 ROOT=Path(__file__).resolve().parent
 MARKER='\n<!-- SnowEx comparison addon v1 -->\n'
@@ -53,15 +56,16 @@ def append_comparison(html):
     for name,filename,license_file in [('geotiff','geotiff-2.1.3.js','geotiff-LICENSE'),('proj4','proj4-2.12.1.js','proj4-LICENSE.md')]:
         license_text=(vendor/license_file).read_text(encoding='utf-8').replace('*/','* /')
         addon+=script(name,'/*\n'+license_text+'\n*/\n'+(vendor/filename).read_text(encoding='utf-8'))
-    for name in ['core','tiff','export','panel']:
-        addon+=script('ui' if name=='panel' else name,(ROOT/'viewer_compare'/f'{name}.js').read_text(encoding='utf-8'))
+    for name in ['core','tiff','export','mask','panel']:
+        addon+=script('ui' if name=='panel' else 'export-module' if name=='export' else name,(ROOT/'viewer_compare'/f'{name}.js').read_text(encoding='utf-8'))
     result=injected+MARKER+addon
     if remove_comparison(result)!=base:raise ValueError('Original page changed outside marked additions')
     return result
 
 
 def validate(candidate):
-    subprocess.run(['node',str(ROOT/'viewer_compare/check_page.js'),str(candidate)],check=True,capture_output=True,text=True)
+    subprocess.run(['node',str(ROOT/'viewer_compare/check_page.js'),str(candidate)],check=True,capture_output=True,text=True,
+                   creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
 
 def sha(data):return hashlib.sha256(data).hexdigest()

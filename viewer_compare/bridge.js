@@ -9,6 +9,65 @@
   const copy=stops=>stops.map(s=>[s[0],s[1]]);
   const clearStyle=k=>{for(const field of styleFields)if(PREF[field])delete PREF[field][k];};
   const listeners=new Set();let changing=0,lastSelection='';
+  const maskPrefs=new Map(),maskCache=new Map(),maskListeners=new Set();
+  const isMask=k=>!!P.arrays[k]&&productKind(k)==='coherence_mask';
+  const maskOptions=k=>isMask(k)?window.SnowCompareCore.maskOptions(maskPrefs.get(k)):null;
+  const category=k=>temporary.has(k)?(P.arrays[k].maskCategory==='transition'?2:P.arrays[k].maskBinary?1:0):
+    isMask(k)&&window.SnowCompareCore&&maskOptions(k).mode==='binary'?1:0;
+  const categoryRange=k=>category(k)===2?[-1,1]:category(k)===1?[0,1]:null;
+  const maskSupported=()=>U.uMaskBinary!==undefined&&U.uMaskBinary!==null;
+  function maskTargets(){
+    const state=selection();if(!state.key)return [];
+    const key=state.comparison!==null?lastShown.maskKey:state.key,targets=[];
+    if(isMask(key))targets.push({key,label:(state.comparison!==null?'Comparison reference · ':'Primary · ')+P.arrays[key].label});
+    if(isMask(ovKey)&&ovKey!==key)targets.push({key:ovKey,label:'Overlay · '+P.arrays[ovKey].label});
+    return targets;
+  }
+  function maskLegend(k){
+    if(!isMask(k)&&!category(k))return;
+    const bounds=categoryRange(k)||layerRange(k),[lo,hi]=bounds;
+    $('t0').textContent=fmt(lo);$('t1').textContent=fmt((lo+hi)/2);$('t2').textContent=fmt(hi);
+    if(isMask(k)){
+      const options=maskOptions(k);
+      $('legDom').textContent='InSAR · '+(options.mode==='binary'?'0–1 block state':'passing fraction');
+      $('rangeStateLabel').textContent=options.mode==='binary'?'0–1 · fraction ≥ '+options.cutoff:
+        'Average · '+$('rangeStateLabel').textContent;
+      $('rangeState').title=options.mode==='binary'?'1 when the decoded valid-cell passing fraction is at least '+options.cutoff+'. Missing blocks remain blank.':
+        'Passing fraction among valid cells in each exported block. '+$('rangeState').title;
+    }
+    if(category(k)&&window.SnowCompareExport){
+      const name=layerCmap(k),style=name==='custom'?{stops:customStops(k)}:{builtin:name};
+      const color=window.SnowCompareExport.colorMapper(style),n=category(k)===2?3:2;
+      const stops=[];
+      for(let i=0;i<n;i++){
+        const rgb='rgb('+color(i/(n-1)).slice(0,3).join(',')+')';
+        const a=i===0?0:(i-.5)/(n-1)*100,b=i===n-1?100:(i+.5)/(n-1)*100;
+        stops.push(rgb+' '+a+'%',rgb+' '+b+'%');
+      }
+      $('ramp').style.background='linear-gradient(90deg,'+stops.join(',')+')';
+    }
+  }
+  // The CPU classifies original fractions. The shader only keeps interpolated
+  // class values categorical; it never receives the user's cutoff.
+  const originalDraw=draw;
+  draw=function(...args){
+    for(const [k,overlay] of [[primKey,false],[ovKey,true]]){
+      const flag=overlay?U.uMaskBinary2:U.uMaskBinary;
+      if(flag!==undefined&&flag!==null)gl.uniform1i(flag,category(k));
+      const bounds=categoryRange(k);
+      if(bounds){gl.uniform1f(overlay?U.uLo2:U.uLo,bounds[0]);gl.uniform1f(overlay?U.uHi2:U.uHi,bounds[1]);}
+    }
+    return originalDraw.apply(this,args);
+  };
+  const originalSyncLegendEditor=syncLegendEditor;
+  syncLegendEditor=function(...args){
+    const result=originalSyncLegendEditor.apply(this,args),bounds=categoryRange(primKey);
+    for(const [i,id] of ['leMin','leMax'].entries())if($(id)){
+      $(id).disabled=!!bounds;if(bounds)$(id).value=bounds[i];
+    }
+    for(const button of $('legendEditor')?.querySelectorAll?.('.le-presets button[data-stretch]')||[])button.disabled=!!bounds;
+    return result;
+  };
   function selection(){
     const tab=tabs.find(t=>t.id===active),key=tab&&tab.kind==='layer'?primKey:null;
     const available=!!(lastShown&&temporary.has(lastShown.key)&&tabs.some(t=>t.key===lastShown.key));
@@ -26,7 +85,22 @@
   };
   activate=notifyAfter(activate);closeTab=notifyAfter(closeTab);
   lastSelection=JSON.stringify(selection());
-  floats=function(k){return temporary.has(k)?temporary.get(k):originalFloats(k);};
+  floats=function(k){
+    if(temporary.has(k))return temporary.get(k);
+    const source=originalFloats(k);
+    if(!isMask(k)||!window.SnowCompareCore)return source;
+    const options=maskOptions(k),cached=maskCache.get(k);
+    if(cached&&cached.source===source&&cached.mode===options.mode&&cached.cutoff===options.cutoff)return cached.values;
+    const values=window.SnowCompareCore.maskPreview(source,options);
+    if(maskCache.size>=14)maskCache.delete(maskCache.keys().next().value);
+    maskCache.set(k,{source,...options,values});return values;
+  };
+  const originalSetOverlay=setOverlay;
+  setOverlay=function(...args){
+    const result=originalSetOverlay.apply(this,args);
+    for(const listener of maskListeners)listener({key:null,options:null});
+    return result;
+  };
   if(typeof angularKind==='function'){
     const originalAngularKind=angularKind;
     angularKind=k=>temporary.has(k)?P.arrays[k].comparisonAngleKind:originalAngularKind(k);
@@ -41,6 +115,19 @@
   };
   window.SnowCompareViewer={
     selection,
+    maskOptions,maskTargets,maskSupported,
+    onMaskOptions(listener){maskListeners.add(listener);return()=>maskListeners.delete(listener);},
+    setMaskOptions(key,options){
+      if(!isMask(key))throw Error('Select a coherence mask layer.');
+      const next=window.SnowCompareCore.maskOptions(options);
+      if(next.mode==='binary'&&!maskSupported())throw Error('This viewer needs the updated mask renderer for 0–1 mode.');
+      const previous=maskOptions(key);
+      if(next.mode===previous.mode&&next.cutoff===previous.cutoff)return;
+      maskPrefs.set(key,next);maskCache.delete(key);
+      if(primKey===key)setPrimary(key);
+      if(ovKey===key)setOverlay(key);
+      for(const listener of maskListeners)listener({key,options:{...next}});
+    },
     onSelection(listener){listeners.add(listener);listener(selection());return()=>listeners.delete(listener);},
     palettes(key){
       const fromConfig=c=>c.mode==='binary'?[[0,c.colors[0]],[.499,c.colors[0]],[.5,c.colors[1]],[1,c.colors[1]]]:copy(c.stops||[]);
@@ -63,17 +150,22 @@
       const style={stops:copy(stops||BUILTIN_STOPS.viridis),reverse:!!layerReverse(primKey)};
       if(name!=='custom')style.builtin=name;
       let [lo,hi]=layerRange(primKey);
+      const categorical=categoryRange(primKey);if(categorical)[lo,hi]=categorical;
       if(isDiverging(primKey)){const m=Math.max(Math.abs(lo),Math.abs(hi),1e-6);lo=-m;hi=m;}
       const mode=rangeMode(primKey),sameStyle=JSON.stringify(style)===JSON.stringify(lastShown.style);
       const sameRange=lo===lastShown.lo&&hi===lastShown.hi&&mode==='custom';
+      const r=PREF.ranges[primKey],validRange=r&&r.length===2&&isFinite(r[0])&&isFinite(r[1])&&r[1]>r[0];
+      const fallback=(mode==='robust'||mode==='detail')&&!validRange;
       const terrainSamples=({a:'A',b:'B',difference:'Difference'}[lastShown.id]||lastShown.id)+' terrain samples (sampled ranks)';
       return {lo,hi,style,
         paletteName:sameStyle&&lastShown.paletteName|| (name==='custom'?'Custom legend palette':PALETTE_LABELS[name]||name),
-        rangeLabel:sameRange&&lastShown.rangeLabel||({full:'Full 0–100% stretch',robust:'3D legend Robust 2–98% stretch · '+terrainSamples,detail:'3D legend Detail 10–90% stretch · '+terrainSamples}[mode]||'Custom value limits')};
+        rangeLabel:categorical&&lastShown.rangeLabel||sameRange&&lastShown.rangeLabel||(fallback?'Full 0–100% stretch · fallback: percentile limits missing, invalid or tied':
+          ({full:'Full 0–100% stretch',robust:'3D legend Robust 2–98% stretch · '+terrainSamples,detail:'3D legend Detail 10–90% stretch · '+terrainSamples}[mode]||'Custom value limits'))};
     },
     show:notifyAfter(function(result){
       const identity=instance+'_'+generation;
       const k=prefix+identity,rg=result.grid,n=rg.w*rg.h;
+      if((result.maskBinary||result.maskCategory==='transition')&&!maskSupported())throw Error('This viewer needs the updated mask renderer for categorical comparison.');
       if(result.values.length!==n)throw Error('Temporary result/grid mismatch.');
       let lo=Infinity,hi=-Infinity,valid=0;
       for(const value of result.values)if(Number.isFinite(value)){lo=Math.min(lo,value);hi=Math.max(hi,value);valid++;}
@@ -88,6 +180,7 @@
       P.arrays[k]={w:rg.w,h:rg.h,cell_m:rg.dx,lo,hi,bits:16,b64:btoa(binary),
         valid,total:n,leaf:'comparison_'+identity,label:result.label,short:result.label,
         comparisonAngleKind:result.id==='difference'?0:result.mode==='degrees'?1:result.mode==='radians'?2:0,
+        maskBinary:!!result.maskBinary,maskCategory:result.maskCategory,
         unit:result.unit||'',domain:'meta',cmap:result.cmap||'diverging'};
       clearStyle(k);
       for(const field of styleFields)if(!PREF[field])PREF[field]={};
@@ -107,7 +200,7 @@
         if(c>=0&&r>=0&&c<rg.w&&r<rg.h)displayed[j*W+i]=result.values[r*rg.w+c];
       }
       temporary.set(k,displayed);
-      lastShown={key:k,id:result.id,lo:result.lo,hi:result.hi,paletteName:result.paletteName,rangeLabel:result.rangeLabel,
+      lastShown={key:k,id:result.id,lo:result.lo,hi:result.hi,paletteName:result.paletteName,rangeLabel:result.rangeLabel,maskKey:result.maskKey,
         style:result.style&&{stops:copy(result.style.stops),reverse:!!result.style.reverse,...(result.style.builtin?{builtin:result.style.builtin}:{})}};
       // A difference must not inherit an unrelated overlay blend.
       setOverlay(null);if($('ovSel'))$('ovSel').value='__none__';
@@ -129,5 +222,28 @@
       }
       restoreKey=null;restoreOverlay=null;
     })
+  };
+  // Keep original widgets and ordinary-layer metrics. Temporary comparisons use
+  // analysis-grid counts and exact comparison stretch provenance, not native DEM ratios.
+  const originalSetPrimary=setPrimary;
+  setPrimary=function(k,...args){
+    const returned=originalSetPrimary.call(this,k,...args);
+    maskLegend(k);
+    if(!temporary.has(k)||!lastShown||lastShown.key!==k)return returned;
+    const appearance=window.SnowCompareViewer.appearance(lastShown.id);
+    if(!appearance)return returned;
+    if($('rangeStateLabel'))$('rangeStateLabel').textContent=appearance.rangeLabel;
+    if($('rangeState'))$('rangeState').title=appearance.rangeLabel+
+      '. Comparison display limits; out-of-range colours saturate. Data and statistics are unchanged.';
+    const body=$('iBody');
+    const row=body&&typeof body.querySelectorAll==='function'&&Array.from(body.querySelectorAll('tr'))
+      .find(r=>r.children[0]&&['coverage','valid-cell count relative to DEM'].includes(r.children[0].textContent.trim()));
+    if(row&&row.children[1]){
+      const L=P.arrays[k];
+      row.children[0].textContent='shared cells';
+      row.children[1].textContent=L.valid.toLocaleString()+' / '+L.total.toLocaleString();
+      row.children[1].title='Shared finite cells / all cells in the comparison grid; not native archive coverage.';
+    }
+    return returned;
   };
 }

@@ -32,9 +32,9 @@ class RefreshTests(unittest.TestCase):
             raw=json.dumps(fixture(),indent=2)
             original='<script id="payload" type="application/json">'+raw+'</script>'
             page=viewer/'example_explorer.html';page.write_text(original,encoding='utf-8')
-            with patch('refresh_explorers.subprocess.run') as check:
+            with patch('refresh_explorers.subprocess') as check:
                 backup=refresh(viewer)
-            check.assert_called_once()
+            check.run.assert_called_once()
             self.assertEqual((backup/page.name).read_text(encoding='utf-8'),original)
             self.assertEqual(PAYLOAD.search(page.read_text(encoding='utf-8')).group(1),raw)
             self.assertTrue((backup/'manifest.json').exists())
@@ -44,7 +44,8 @@ class RefreshTests(unittest.TestCase):
             viewer=Path(d)/'viewer';viewer.mkdir()
             original='<script id="payload" type="application/json">'+json.dumps(fixture())+'</script>'
             page=viewer/'example_explorer.html';page.write_text(original,encoding='utf-8')
-            with patch('refresh_explorers.subprocess.run',side_effect=RuntimeError('syntax failed')):
+            with patch('refresh_explorers.subprocess',
+                       **{'run.side_effect': RuntimeError('syntax failed')}):
                 with self.assertRaises(RuntimeError):refresh(viewer)
             self.assertEqual(page.read_text(encoding='utf-8'),original)
 

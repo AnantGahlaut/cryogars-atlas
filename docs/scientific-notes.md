@@ -1,10 +1,14 @@
 # Processing and scientific limitations
 
-These notes describe the current source and the existing explorer snapshot
-reviewed for v1.0.05 on 2026-09-08. They separate observed file metadata from
-current-code behaviour. The historical exports do not record a source commit,
-so current code alone cannot establish exactly how every archived value was
-produced.
+Updated 2026-09-14. These are living methods notes: descriptions of corrected
+source below do not imply that the existing archives or installed explorers
+have been regenerated. Their historical derivatives and display payloads still
+await the coordinated repair and rebuild, which remains on hold. The dated
+product trace (`docs/product_trace/README.md`) and quality review
+(`docs/product_trace/10_product_quality_review.md`) preserve what was observed
+at each review. These are local evidence records, excluded from the source
+repository. Historical exports do not identify their exact source
+commit, so today's code cannot establish how every archived value was produced.
 
 ## Alignment and matching
 
@@ -18,6 +22,12 @@ acquisition endpoints with a five-day maximum minimum separation. A match can
 be close to one radar pass without being close to both. Neither footprint
 intersection nor a temporal match establishes complete spatial overlap or
 unchanged snow conditions.
+
+For a multi-day LiDAR survey, matching uses the closest survey/radar endpoints.
+A timeline symbol marking the survey start can therefore have a different
+visible separation from the stored endpoint gap. The matching table contains
+recorded match rows and unmatched verdicts; it is not a ledger of every search
+candidate considered.
 
 Continuous rasters and complex interferograms require different treatment.
 The builder selects resampling by product, using nearest-neighbour sampling
@@ -85,11 +95,22 @@ The full explorer rebuild remains on hold.
 
 ## Derived layers requiring qualification
 
-**Aspect.** The current calculation reflects north/south relative to conventional
-downhill azimuths. Arithmetic averaging in the display export is also
-inappropriate across the circular 0°/360° boundary. The synthetic tests
-characterize this behaviour; they do not correct it. Treat current aspect as
-requiring correction or exclusion before directional terrain analysis.
+**Aspect (SNEX-001/002/003, corrected source).** Horn derivatives use projected
+east and north coordinates. Downhill bearing is
+`degrees(atan2(-dzdx, -dzdy)) mod 360`, clockwise from grid north; nearly flat
+cells (`hypot(dzdx, dzdy) < 1e-9`) and missing centers have no aspect. This
+corrects the historical north/south reflection. The exporter averages finite
+unit directions within each retained block; a mean resultant of at most
+`1e-12` has no defined direction. Renderer interpolation also uses unit vectors
+for aspect in degrees and wrapped phase in radians, with its separate
+`1e-6 * valid_weight` cancellation tolerance. These are numerical tolerances,
+not terrain-dispersion filters. Slope and unwrapped phase stay scalar.
+
+The old archived aspect and previously exported arithmetic block means remain
+historical until regeneration. A corrected renderer cannot recover directions
+already lost in those means. Verify the regenerated derivatives and downstream
+bearing convention before directional analysis; source regression tests alone
+do not verify the installed products.
 
 **Canopy fraction.** This is a fraction of valid neighbourhood cells at or above
 the 2 m vegetation-height threshold, not an independently classified land-cover
@@ -123,19 +144,45 @@ at a missing center. Incidence calculations still substitute the finite DEM mean
 for missing neighbours in normal stencils and mask missing centers in their
 outputs. Thus derivative validity masks need not equal the base mask. Empty
 cleaned inputs produce missing derivatives; an empty projection comparison is
-explicitly recorded as having no valid overlap. Aspect direction (SNEX-001) and
-geometry validation (SNEX-008) remain separate unresolved corrections.
+explicitly recorded as having no valid overlap. Aspect direction is corrected
+in source under SNEX-001, with artifact regeneration pending. Physical geometry
+validation under SNEX-008 remains unresolved.
 
 The user accepts current enrichment cleaning for now. Improvements to its
 thresholds, footprint screens and interpolation policy are deferred for a later
 review; SNEX-007 changes the input stage, not those rules.
 
-**Radar incidence.** The current implementation approximates a straight flight
-track through a peg point. It does not implement full navigation, squint,
-terrain occlusion, heading-convergence correction, or vertical-datum
-reconciliation; its `look_direction` argument is currently unused. These
-layers are approximate geometry, not validated local-incidence or radar-shadow
-products.
+**Radar incidence (SNEX-008, corrected source).** The implementation approximates
+a straight flight track through the annotation peg. It projects endpoints
+100 m forward/backward along the WGS84 geodesic heading to obtain the local
+grid bearing. For each ground-cell center it places the platform at the nearest
+point on that projected track, at the annotation's constant average altitude.
+Only the declared Left or Right side is retained; wrong-side cells and cells
+within `1e-7 m` of the track are missing. This is a side restriction, not a
+measured beam footprint or terrain-occlusion test.
+
+Flat incidence is the angle of the ground-to-platform vector from vertical.
+Local incidence is its angle from the upward DEM surface normal. Both use the
+same ground elevation and assumed platform position; flat incidence omits the
+surface tilt. The implementation still lacks time-resolved navigation, squint,
+full track curvature, terrain occlusion and vertical-reference reconciliation.
+The archived earlier geometry predates the look-side and heading corrections.
+
+Keep these products labeled approximate geometry. Six QSI terrain references
+are NAVD88/GEOID12b, Grand Mesa's DTM is WGS84 ellipsoidal, and Reynolds Creek's
+exact terrain reference remains unresolved. The cached aircraft field says
+GPS altitude without an explicit height reference. No vertical conversion was
+applied, and neither a horizontal EPSG code nor the radar projection DEM datum
+proves aircraft/terrain height compatibility. The local vertical-reference audit
+is retained at `docs/product_trace/vertical_reference_audit.md` and is excluded
+from the source repository.
+
+The independent geometry comparison (local evidence at
+`docs/product_trace/geometry_model_comparison.md`, excluded from the source repository)
+used 603 sparse synthetic positions on flat 2,000 m terrain, retaining 564 under
+the common side test. Its model agreement does not validate actual navigation,
+terrain, per-pixel incidence or physical accuracy. Preserve these qualifications
+in comparisons and exported results as well as product notes.
 
 **Incidence summary (SNEX-008, source corrected 2026-09-13).** The recorded
 condition is incidence >= 90 degrees, not radar shadow. Its percentage divides
@@ -157,6 +204,14 @@ Browser exports are sampled, block-averaged, and quantized display products.
 The archive grid, colour grid, terrain mesh, and entrance preview have separate
 sampling scales. The current site meshes range from 12 m to 72 m spacing; an
 entrance preview is coarser still and uses 2× vertical exaggeration.
+
+Ordinary scalar blocks average the finite source cells; one finite cell can
+supply the block. Missing-only blocks remain missing, and incomplete bottom/
+right blocks are cropped. A visible display block is therefore not evidence
+that its entire area was sampled. Read each layer's actual `cell_m`; radar
+colour grids are coarser than the terrain mesh. Terrain heights are packed
+separately at 16 bits; ordinary colour layers use 8 bits with a missing code.
+Quantized probes are approximate readouts, not the original 3 m cells.
 
 Amplitude/magnitude packing uses a sampled 2nd–98th percentile range. Values
 clipped during export cannot be recovered by editing a palette. Palette

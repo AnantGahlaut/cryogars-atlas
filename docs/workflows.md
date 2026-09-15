@@ -146,6 +146,9 @@ do not have that limitation.
 
 ## Maintain the viewer without rereading HDF5
 
+Production rollout and the coordinated scientific rebuild remain on hold. The
+procedures below document maintenance steps for a later authorized rollout.
+
 ### Entrance only
 
 Edit `index_template.html`, preserve a copy of the existing entrance, then run:
@@ -158,20 +161,35 @@ This reads existing `*_explorer.html` payloads and writes only `viewer/index.htm
 
 ### Isolated logo and notes
 
-Edit `ui_preview/logo_notes_addon.html`, then run:
+With all eight site pages and the entrance present in `viewer/`, edit
+`ui_preview/logo_notes_addon.html`, then generate the Banner Summit preview:
+
+```bash
+python ui_preview/build_logo_notes_preview.py
+```
+
+Review `ui_preview/banner_summit_logo_notes_preview.html` in a browser before
+rollout. This generated page is a local artifact excluded from the source
+repository; the rollout code and checker require it as a review baseline.
+The preview builder preserves the existing renderer and comparison code.
+
+After review, when rollout is authorized:
 
 ```bash
 python explorer_addon.py --rollout
 ```
 
-This command requires all eight site pages and the existing entrance. It backs
-up existing pages and replaces the isolated add-on while checking
-that original application code, styles, and embedded data remain intact. Full
-builds and interface refreshes include the same add-on automatically.
+This command backs up existing pages and replaces the isolated logo and notes
+add-on while checking that original application code, styles, comparison code,
+and embedded data remain intact. Renderer and comparison-mask control changes
+require the shared interface refresh below. Full builds and interface refreshes
+include the same notes add-on automatically.
 
 ### Shared explorer interface
 
-When changing `explorer_template.html`, run:
+To install changes to `explorer_template.html` or the comparison and mask controls
+in `viewer_compare/`, use the shared interface refresh after review and rollout
+authorization:
 
 ```bash
 python refresh_explorers.py --viewer-dir viewer
@@ -213,6 +231,11 @@ script blocks in the nine current pages compiled.
 retire it before making it part of release automation. Preview/rollout checks
 that depend on local backup baselines are not portable source-only checks.
 
+`ui_preview/check_grid_placement.js` also requires the local evidence file
+`docs/product_trace/evidence/viewer_metadata.json`. That snapshot is excluded
+from the source repository, so this check cannot run from a source checkout
+alone. Retain the matching local snapshot when reproducing its eight-site checks.
+
 No browser appearance, WebGL behaviour, keyboard accessibility, small-screen
 layout, or hosted deployment was assessed in this pass. Those remain separate
 release-review tasks.
@@ -225,6 +248,7 @@ following paths are runtime dependencies despite their preview-directory name:
 
 - `assets/cryogars-logo.jpg`
 - `ui_preview/logo_notes_addon.html`
+- `ui_preview/build_logo_notes_preview.py`
 - `ui_preview/check_preview.js`
 - `ui_preview/check_logo_notes_rollout.js`
 

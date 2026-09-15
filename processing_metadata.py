@@ -2,6 +2,9 @@
 
 import json
 import math
+from build_provenance import capture_sources
+
+_SOURCE_SNAPSHOT = capture_sources(__file__)
 
 
 def statistics_attrs(data, finite, *, percentiles=False):

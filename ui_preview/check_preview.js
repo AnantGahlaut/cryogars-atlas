@@ -4,10 +4,13 @@ const file = process.argv[2];
 if (!file) throw new Error("usage: node check_preview.js <html>");
 
 const html = fs.readFileSync(file, "utf8");
-const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
 if (scripts.length < 2) throw new Error("expected payload and application scripts");
 
-new Function(scripts[scripts.length - 1][1]);
+for (const [, attributes, body] of scripts) {
+  if (/type=["']application\/json["']/i.test(attributes)) JSON.parse(body);
+  else new Function(body);
+}
 
 const required = [
   'id="settingsPanel"',

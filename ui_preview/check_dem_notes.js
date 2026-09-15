@@ -44,7 +44,7 @@ assert(render({...gm,source_note:oldNote}).includes('Archived note (conflicts wi
 const corrected=render({...gm,source_note:'LiDAR-derived snow-off reference DTM from the HRSI collection.',
   source_note_previous:oldNote,source_note_correction:'Viewer correction <2026-09-12>; archive repair pending.'});
 assert(!corrected.includes('Archived note (conflicts with provider'));
-assert(!corrected.includes('the archived note calls this DTM'));
+assert(!corrected.includes('Provenance correction:'));
 assert(corrected.includes('Previous source note')&&corrected.includes(oldNote.replace('>','&gt;')));
 assert(corrected.includes('Viewer correction &lt;2026-09-12&gt;; archive repair pending.'));
 const other=render({}, {dem:'another-dem'});
@@ -63,27 +63,35 @@ for(const kind of ['slope','aspect']){
   assert(notes.includes('p = [(c + 2f + i) − (a + 2d + g)] / (8s)'));
   assert(notes.includes('q = [(a + 2b + c) − (g + 2h + i)] / (8s)'));
   assert(notes.includes('NaN in any of the eight neighbours'));
-  assert(notes.includes('input processing stage is not established'));
-  assert(!notes.includes('Recorded input: the cleaned DEM'));
+  const unknownInput=/input processing stage.{0,30}(?:unrecorded|not recorded|not established)/i;
+  const cleanedInput=/Recorded input:.{0,80}cleaned DEM/;
+  assert(unknownInput.test(notes));
+  assert(!cleanedInput.test(notes));
   layers[key].attrs={...derived,derived_from_stage:'enriched_base_after_cleaning',derived_from_archive:'self',derivation_version:'1.0'};
   const stagedNotes=render({}, {layers,dem:demPath},key);
-  assert(stagedNotes.includes('Recorded input: the cleaned DEM stored in the same enriched archive'));
-  assert(!stagedNotes.includes('input processing stage is not established'));
+  assert(cleanedInput.test(stagedNotes));
+  assert(!unknownInput.test(stagedNotes));
   layers[key].attrs={...derived,derived_from_stage:'enriched_base_after_cleaning',derived_from_archive:'different-file'};
-  assert(!render({}, {layers,dem:demPath},key).includes('Recorded input: the cleaned DEM'));
+  assert(!cleanedInput.test(render({}, {layers,dem:demPath},key)));
   layers[key].attrs=derived;
   if(kind==='aspect'){
     assert(notes.includes('aspect_sin = sin(θ)')&&notes.includes('aspect_cos = cos(θ)'));
     assert(notes.includes('Radians alone still jump'));
     assert(notes.includes('Direction convention needs review.'));
-    assert(notes.includes('not a pixel-by-pixel audit'));
-    assert(notes.includes('validity mask')&&notes.includes('ordinary block mean'));
+    assert(/synthetic planes/i.test(notes)&&/archived aspect cells.{0,50}await verification/i.test(notes));
+    assert(notes.includes('validity mask')&&/ordinary block mean/i.test(notes));
     layers[key].aggregation={method:'circular_mean_degrees',resultant_tolerance:1e-12};
     const correctedNotes=render({}, {layers,dem:demPath},key);
     assert(correctedNotes.includes('circular mean')&&correctedNotes.includes('equal weight'));
     assert(correctedNotes.includes('1e-12')&&correctedNotes.includes('missing'));
     assert(!correctedNotes.includes('ordinary block mean'));
     assert(correctedNotes.includes('Direction convention needs review.'));
+    layers[key].attrs={...derived,method:'horn_1981_3x3_downhill_grid_bearing',aspect_convention:'downhill_clockwise_from_grid_north'};
+    const downhillNotes=render({}, {layers,dem:demPath},key);
+    assert(downhillNotes.includes('Downhill grid bearing.'));
+    assert(downhillNotes.includes('atan2(−p, −q)'));
+    assert(!downhillNotes.includes('Direction convention needs review.'));
+    assert(!downhillNotes.includes('A_legacy'));
   }else{
     assert(notes.includes('β_deg = atan(√(p² + q²)) × 180/π'));
     assert(notes.includes('percent slope = 100 tan(β_rad)'));
@@ -100,12 +108,12 @@ const incidenceAttrs={incidence_ge_90_status:'computed',incidence_ge_90_fraction
   incidence_ge_90_cell_count:2,incidence_valid_cell_count:3};
 const incidence=incidenceContent(incidenceAttrs);
 assert(incidence.includes('Incidence ≥ 90°')&&incidence.includes('66.67%'));
-assert(incidence.includes('Share of finite incidence cells')&&incidence.includes('not a radar-shadow measurement'));
-assert(incidence.includes('outside the radar swath'));
+assert(incidence.includes('Share of finite incidence cells'));
+assert(/geometry statistic/i.test(incidence)&&/radar-shadow.{0,100}require terrain-blocking and swath tests/i.test(incidence));
 assert(!incidence.includes('Legacy share'));
 assert(incidenceContent({...incidenceAttrs,incidence_ge_90_fraction:0}).includes('0.00%'));
 const noIncidence=incidenceContent({incidence_ge_90_status:'no_valid_incidence',incidence_ge_90_fraction:'nan',radar_shadow_fraction:.5});
-assert(noIncidence.includes('Unavailable: no finite incidence cells'));
+assert(/unavailable: no finite incidence cells/i.test(noIncidence));
 assert(!noIncidence.includes('50.00%')&&!noIncidence.includes('0.00%'));
 for(const value of [null,undefined,'nan',true]){
   const unavailable=incidenceContent({...incidenceAttrs,incidence_ge_90_fraction:value,radar_shadow_fraction:.5});
@@ -117,4 +125,16 @@ assert(legacyIncidence.includes('Legacy share of whole grid')&&legacyIncidence.i
 assert(legacyIncidence.includes('historical denominator includes missing cells'));
 assert(!legacyIncidence.includes('Share of finite incidence cells'));
 assert(incidenceContent({}).includes('No incidence-threshold percentage is recorded'));
+assert(incidenceContent({}).includes('No look-side restriction is recorded'));
+const lookSide={look_side_mask_method:'projected_peg_track_half_plane_v1',radar_look_direction:'Left'};
+const restrictedIncidence=incidenceContent({...incidenceAttrs,...lookSide});
+assert(restrictedIncidence.includes('recorded Left look side'));
+assert(restrictedIncidence.includes('after the look-side restriction'));
+assert(!restrictedIncidence.includes('No look-side restriction is recorded'));
+const converted=incidenceContent({...incidenceAttrs,...lookSide,look_side_mask_method:'projected_peg_track_half_plane_v2',heading_conversion_method:'wgs84_geodesic_tangent_100m'});
+assert(converted.includes('converted to the local map-grid bearing'));
+assert(!converted.includes('No heading conversion is recorded'));
+const flatKey='science/UAVSAR/fixture/GEOMETRY/incidence_angle_flat';
+const flatNotes=render({}, {layers:{[flatKey]:{label:'Flat incidence',cell:24,attrs:lookSide}}},flatKey);
+assert(flatNotes.includes('recorded Left look side')&&!flatNotes.includes('Incidence ≥ 90°'));
 console.log('PASS: DEM/terrain notes and lineage; incidence finite-cell, legacy, missing and zero cases.');

@@ -14,6 +14,7 @@
   let styles=styleDefaults();
   const styleKey=()=>view==='difference'?'difference':'ab';
   const ownsComparison=()=>!!result&&api.selection().comparison!==null;
+  const binaryMask=()=>result?.maskOptions?.mode==='binary';
   const baseWarning='Exploratory comparison, not native-resolution validation. Website values are quantized; some layers are clipped. Only shared valid cells enter the maps and statistics.';
   const status=message=>{$('status').textContent=message;$('terrain-status').textContent=message;};
   const exportDisabled=value=>{$('export').disabled=value;$('terrain-export').disabled=value;};
@@ -98,6 +99,24 @@
     return {info:{w:g.w,h:g.h,bands:1,epsg:g.epsg,nodata:NaN,pixel:(x,y)=>[(x-g.left)/g.dx-.5,(y-g.top)/g.dy-.5]},
       image:{async readRasters({window:[x0,y0,x1,y1]}){const out=new Float32Array((x1-x0)*(y1-y0));for(let y=y0;y<y1;y++)out.set(values.subarray(y*g.w+x0,y*g.w+x1),(y-y0)*(x1-x0));return out;}}};
   }
+  function calculate(r){
+    const mask=r.mode==='mask',options=mask?C.maskOptions(api.maskOptions(r.aname)):null;
+    const a=mask?C.maskPreview(r.rawA,options):new Float32Array(r.rawA);
+    const b=mask?C.maskPreview(r.rawB,options):new Float32Array(r.rawB);
+    const binary=options?.mode==='binary';
+    const d=binary?C.difference(r.rawA,r.rawB,'mask',options.cutoff):C.difference(a,b,mask?'linear':r.mode);
+    if(!d.stats.count)throw Error('No overlapping valid data. Check the site, EPSG, band, nodata, and raster footprint.');
+    // Keep decoded/aligned originals intact; each view shares the statistics' valid intersection.
+    const transitions=[0,0,0];
+    for(let i=0;i<a.length;i++){
+      if(!Number.isFinite(d.values[i]))a[i]=b[i]=NaN;
+      else if(binary)transitions[d.values[i]+1]++;
+    }
+    Object.assign(r,{a,b,difference:d.values,stats:d.stats,maskOptions:options,transitions,
+      unit:mask?(binary?'state change':'fraction change'):r.aUnit,
+      ranks:{ab:E.sortedValues([a,b]),difference:E.sortedValues([d.values])}});
+    return r;
+  }
   $('run').onclick=async()=>{
     if(!panel.open||result)return;
     cancel();resetResult();const a=selected(),g=C.grid(context,a),token=++epoch;
@@ -125,34 +144,37 @@
         bname=b.key;sourceNote=`B: exported ${b.bits}-bit values at ${b.cell_m} m; ${opts.method} centre sampling${b.stretched?'; clipped tails':''}`;
       }
       if(token!==epoch)return;
-      const d=C.difference(av,bv,mode(a));
-      if(!d.stats.count)throw Error('No overlapping valid data. Check the site, EPSG, band, nodata, and raster footprint.');
-      // Show A and B over the identical intersection used by the statistics.
-      for(let i=0;i<av.length;i++)if(!Number.isFinite(d.values[i]))av[i]=bv[i]=NaN;
-      result={a:av,b:bv,difference:d.values,stats:d.stats,grid:g,unit:mode(a)==='mask'?'state change':units(a),mode:mode(a),
-        ranks:{ab:E.sortedValues([av,bv]),difference:E.sortedValues([d.values])},
+      result=calculate({rawA:av,rawB:bv,grid:g,mode:mode(a),kind:a.kind,
         aUnit:units(a),aname:a.key,bname,sourceNote,site:context.identification.site_name||context.site,
         quantization:`A: ${a.bits}-bit exported values; increment ≈ ${((a.hi-a.lo)/(2**a.bits-2)).toPrecision(3)} ${units(a)}${a.stretched?'; clipped tails':''}`,
-        warnings:$('warning').textContent};
+        warnings:$('warning').textContent});
       view='difference';$('result').hidden=false;loadStyle();render();show3D();panel.close();
       $('terrain-style').focus();status('Comparison ready in 3D. Switch A / B / B − A, adjust colours, or export PNG.');
     }catch(e){if(token===epoch)status(e.name==='AbortError'?'Comparison cancelled.':e.message);}
     finally{if(token===epoch){controller=null;$('run').disabled=false;$('cancel').hidden=true;}}
   };
   function display(){
-    const values=result[view],difference=view==='difference',s=styles[styleKey()];
-    const {lo,hi}=E.stretch(result.ranks[styleKey()],s.lower,s.upper,difference&&s.zero);
+    const values=result[view],difference=view==='difference',s=styles[styleKey()],binary=binaryMask();
+    const {lo,hi}=binary?{lo:difference?-1:0,hi:1}:E.stretch(result.ranks[styleKey()],s.lower,s.upper,difference&&s.zero);
     const palette=paletteChoices.find(p=>p.id===s.palette)||paletteChoices[0];
     const style={stops:palette.stops,reverse:!!s.reverse!==!!palette.reverse,...(palette.builtin?{builtin:palette.builtin}:{})};
-    const title=difference?(result.mode==='mask'?'Mask transitions B − A':'Difference B − A'):view==='a'?'Reference A':'Comparison B';
+    const title=difference?(binary?'Mask transitions B − A':'Difference B − A'):view==='a'?'Reference A':'Comparison B';
     const rangeName=s.lower===0&&s.upper===100?'Full':s.lower===2&&s.upper===98?'Robust':s.lower===10&&s.upper===90?'Detail':'Custom';
     const rangeLabel=`${rangeName} ${s.lower}–${s.upper}% stretch${difference&&s.zero?' · zero-centred limits':''}`;
-    return {values,lo,hi,difference,title,unit:difference?result.unit:result.aUnit,grid:result.grid,style,paletteName:palette.name,rangeLabel,...s.appearance};
+    return {values,lo,hi,difference,title,unit:difference?result.unit:result.mode==='mask'?(binary?'state':'fraction'):result.aUnit,
+      grid:result.grid,style,paletteName:palette.name,rangeLabel,...s.appearance,
+      ...(result.mode==='mask'?{maskKey:result.aname,maskBinary:binary&&!difference,maskCategory:binary?(difference?'transition':'binary'):null}:{}),
+      ...(binary?{lo,hi,rangeLabel:`0–1 preview · cutoff ${result.maskOptions.cutoff} · fixed ${difference?'−1 / 0 / +1':'0 / 1'} states`}:{})};
   }
   function captureAppearance(){
     if(!result)return;
     const a=api.appearance(view);if(!a)return;
     const d=display();
+    if(binaryMask()){
+      if(JSON.stringify(a.style)!==JSON.stringify(d.style)||a.paletteName!==d.paletteName)
+        styles[styleKey()].appearance={...styles[styleKey()].appearance,style:a.style,paletteName:a.paletteName};
+      return;
+    }
     if(a.lo!==d.lo||a.hi!==d.hi||JSON.stringify(a.style)!==JSON.stringify(d.style)||a.rangeLabel!==d.rangeLabel||a.paletteName!==d.paletteName)
       styles[styleKey()].appearance=a;
   }
@@ -169,15 +191,19 @@
     $('percent-low').value=String(s.lower);$('percent-high').value=String(s.upper);$('zero').checked=s.zero;
     if(s.appearance){
       $('palette').value='__terrain__';$('reverse').checked=false;
-      const p=s.appearance.rangeLabel.match(/([\d.]+)[–-]([\d.]+)%/);
-      $('percent-low').value=p?p[1]:'';$('percent-high').value=p?p[2]:'';
-      $('zero').checked=false;
+      if(s.appearance.rangeLabel){
+        const p=s.appearance.rangeLabel.match(/([\d.]+)[–-]([\d.]+)%/);
+        $('percent-low').value=p?p[1]:'';$('percent-high').value=p?p[2]:'';
+        $('zero').checked=false;
+      }
     }
     $('zero-field').hidden=view!=='difference';
+    for(const id of ['percent-low','percent-high','zero'])$(id).disabled=binaryMask();
+    panel.querySelectorAll('[data-nxc-range]').forEach(b=>b.disabled=binaryMask());
     exportDisabled(false);$('show').disabled=false;
   }
   function updateStyle(rangeChanged=false){
-    if(!ownsComparison())return;
+    if(!ownsComparison()||binaryMask()&&rangeChanged)return;
     captureAppearance();
     const lower=$('percent-low').value.trim()?Number($('percent-low').value):NaN;
     const upper=$('percent-high').value.trim()?Number($('percent-high').value):NaN;
@@ -188,16 +214,17 @@
       if(previous.appearance&&!rangeChanged){
         previous.appearance={...previous.appearance,style:{stops:palette.stops,reverse:!!$('reverse').checked!==!!palette.reverse,...(palette.builtin?{builtin:palette.builtin}:{})},paletteName:palette.name};
       }else{
-        E.stretch(result.ranks[styleKey()],lower,upper,view==='difference'&&$('zero').checked);
-        styles[styleKey()]={palette:palette.id,paletteData:palette.id==='__terrain__'?palette:null,lower,upper,reverse:$('reverse').checked,zero:$('zero').checked};
+        if(!binaryMask())E.stretch(result.ranks[styleKey()],lower,upper,view==='difference'&&$('zero').checked);
+        styles[styleKey()]={palette:palette.id,paletteData:palette.id==='__terrain__'?palette:null,lower:binaryMask()?previous.lower:lower,upper:binaryMask()?previous.upper:upper,reverse:$('reverse').checked,zero:$('zero').checked};
       }
       // Invalidate any PNG still being encoded with the previous styling.
-      epoch++;exportDisabled(false);$('show').disabled=false;render();show3D();status('3D and PNG updated with these colours and percentile limits.');
+      epoch++;exportDisabled(false);$('show').disabled=false;render();show3D();status(binaryMask()?'3D and PNG colours updated; mask states keep fixed limits.':'3D and PNG updated with these colours and percentile limits.');
     }catch(e){epoch++;exportDisabled(true);$('show').disabled=true;status(e.message);}
   }
   for(const id of ['palette','reverse'])$(id).addEventListener('change',()=>updateStyle());
   for(const id of ['percent-low','percent-high','zero'])$(id).addEventListener('change',()=>updateStyle(true));
   panel.querySelectorAll('[data-nxc-range]').forEach(b=>b.onclick=()=>{
+    if(binaryMask())return;
     const p=b.dataset.nxcRange.split(',');$('percent-low').value=p[0];$('percent-high').value=p[1];updateStyle(true);
   });
   function render(){
@@ -210,19 +237,26 @@
       const color=E.colorMapper(d.style);
       $('key').style.background='linear-gradient(90deg,'+Array.from({length:65},(_,i)=>'rgb('+color((d.hi-d.lo)*i/64/Math.max(d.hi-d.lo,1e-6)).slice(0,3).join(',')+') '+i*100/64+'%').join(',')+')';
     }
+    if(d.maskCategory){
+      const color=E.colorMapper(d.style),fractions=d.maskCategory==='transition'?[0,.5,1]:[0,1];
+      $('key').style.background='linear-gradient(90deg,'+fractions.flatMap((v,i)=>{
+        const c='rgb('+color(v).slice(0,3).join(',')+')';return [c+' '+i*100/fractions.length+'%',c+' '+(i+1)*100/fractions.length+'%'];
+      }).join(',')+')';
+    }
     $('range-label').textContent=d.rangeLabel;
     const p=d.rangeLabel.match(/([\d.]+)[–-]([\d.]+)%/),activeRange=p?p[1]+','+p[2]:'';
     panel.querySelectorAll('[data-nxc-range]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.nxcRange===activeRange)));
-    $('ticks').replaceChildren();for(const value of [d.lo,(d.lo+d.hi)/2,d.hi]){const span=document.createElement('span');span.textContent=value.toPrecision(4)+' '+d.unit;$('ticks').appendChild(span);}
+    $('ticks').replaceChildren();for(const value of d.maskCategory==='binary'?[0,1]:[d.lo,(d.lo+d.hi)/2,d.hi]){const span=document.createElement('span');span.textContent=value.toPrecision(4)+' '+d.unit;$('ticks').appendChild(span);}
     viewButtons.forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.nxcView===view)));
     $('terrain-name').textContent=d.title+' · temporary';
     $('summary').textContent=`${d.title} · north up\n${s.count.toLocaleString()} shared cells (${(s.coverage*100).toFixed(1)}% of A grid)\n`+
-      (result.mode==='mask'?'−1 lost usable · 0 unchanged · +1 gained usable':`Mean B−A ${s.mean.toPrecision(4)} ${result.unit}\nMAE ${s.mae.toPrecision(4)} · RMSE ${s.rmse.toPrecision(4)} ${result.unit}`)+
+      (binaryMask()?`0–1 preview · cutoff ${result.maskOptions.cutoff}\n−1 lost pass: ${result.transitions[0]} · 0 unchanged: ${result.transitions[1]} · +1 gained pass: ${result.transitions[2]}`:`${result.mode==='mask'?'Average fractions\n':''}Mean B−A ${s.mean.toPrecision(4)} ${result.unit}\nMAE ${s.mae.toPrecision(4)} · RMSE ${s.rmse.toPrecision(4)} ${result.unit}`)+
       `\n${d.grid.w} × ${d.grid.h} @ ${d.grid.dx} m`;
   }
   function show3D(){
     if(!result)return;const d=display();
-    api.show({...d,id:view,mode:result.mode,label:d.title+' · temporary',cmap:d.difference?'diverging':'viridis'});
+    if(result.pendingMaskUpdate)result.pendingMaskUpdate=false;
+    api.show({...d,id:view,mode:result.mode,kind:result.kind,label:d.title+' · temporary',cmap:d.difference?'diverging':'viridis'});
     terrain.hidden=false;trigger.hidden=true;
   }
   viewButtons.forEach(b=>b.onclick=()=>{if(!ownsComparison())return;captureAppearance();view=b.dataset.nxcView;refreshPalettes();loadStyle();render();show3D();});
@@ -232,13 +266,17 @@
     const token=epoch,filename=context.site+'_'+view+'_comparison.png';
     const lines=[result.site+' · EPSG:'+g.epsg+' · north up · '+g.w+' × '+g.h+' map pixels @ '+g.dx+' m',
       'A: '+result.aname,'B: '+result.bname,result.sourceNote,result.quantization,
-      'Palette: '+d.paletteName+(d.style.reverse?' (reversed)':''),d.rangeLabel+'; out-of-range colours saturate; statistics unchanged.',
+      'Palette: '+d.paletteName+(d.style.reverse?' (reversed)':''),d.rangeLabel+(binaryMask()?'; palette changes do not change states.':'; out-of-range colours saturate; statistics unchanged.'),
       `Shared valid: ${result.stats.count}/${result.stats.total}; nodata transparent/white; Δ = B − A`,
       'Grid upper-left edge: '+g.left+', '+g.top+'; centre x=left+(col+0.5)×cell, y=top−(row+0.5)×cell.',
       'Exploratory website-resolution comparison; no native-data or vertical-datum validation.'];
     if(result.mode==='degrees')lines.push('Aspect uses shortest signed angular difference; known source direction/averaging issues remain.');
     if(result.mode==='radians')lines.push('Phase uses shortest signed angular difference; existing preview averaging is not corrected.');
-    if(result.mode==='mask')lines.push('Mask preview threshold >=0.5: −1 lost usable, 0 unchanged, +1 gained usable.');
+    if(result.mode==='mask'){
+      const cutoff=result.maskOptions.cutoff;
+      lines.push(binaryMask()?`Mask 0–1 preview; cutoff ${cutoff} applied to both original A/B fractions. A/B: 0 below cutoff, 1 at or above cutoff. Δ: −1 lost pass, 0 unchanged, +1 gained pass.`:
+        `Mask Average mode: A/B show fractions of valid cells passing the archived coherence test; Δ is the fraction change. Binary preview cutoff ${cutoff} is saved but does not classify this map.`);
+    }
     exportDisabled(true);
     try{
       E.figure(document,{...d,lines}).toBlob(blob=>{
@@ -255,10 +293,17 @@
     }catch(e){exportDisabled(false);status('PNG export failed: '+e.message);}
   };
   let lastSelection=null;
+  api.onMaskOptions(({key})=>{
+    if(!result||result.mode!=='mask'||key!==result.aname)return;
+    if(ownsComparison())captureAppearance();
+    calculate(result);epoch++;result.pendingMaskUpdate=true;
+    if(ownsComparison()){refreshPalettes();loadStyle();render();show3D();status('Mask preview and statistics updated from the original aligned fractions.');}
+  });
   api.onSelection(selection=>{
     const previous=lastSelection;lastSelection=selection;
     if(ownsComparison()){
       terrain.hidden=false;trigger.hidden=true;
+      if(result.pendingMaskUpdate){refreshPalettes();loadStyle();render();show3D();return;}
       if(!previous||previous.comparison===null){captureAppearance();refreshPalettes();loadStyle();render();}
       return;
     }

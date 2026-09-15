@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-verify_enriched.py -- prove the enriched archives carry only real measurements.
+verify_enriched.py -- check the enriched archive's recorded processing invariants.
 
 `audit_archive.py` checks the raw build against the download inventory. This
 checks the *enriched* files against the invariants enrichment is supposed to
 establish, by reading the values rather than trusting the log that wrote them:
 
-  * every stored value is a measurement -- no exact-0.0 radar fill, no
-    unwrapper zeros, nothing outside a physically possible range
+  * stored values meet the selected range and zero-handling conventions;
+    those heuristics can remove real measurements and do not establish accuracy
   * dtypes survived the rewrite: complex phase is still complex, the coherence
     mask is still uint8
-  * every layer of an acquisition shares one nodata footprint, which is what
-    "pixel-aligned" has to mean if a model is going to stack them
-  * the geometry needed to invert phase is present and physical
+  * acquisition-layer validity agrees with the checker expectations; grid
+    alignment alone does not require equal validity footprints
+  * approximate geometry fields are present and meet numerical range checks,
+    without validating navigation, height compatibility or phase inversion
 
 Reads one array at a time, so peak memory is one grid regardless of site size.
 
@@ -30,7 +31,7 @@ from pathlib import Path
 
 C = {"red": "\033[31m", "yel": "\033[33m", "grn": "\033[32m",
      "dim": "\033[2m", "bold": "\033[1m", "off": "\033[0m"}
-if os.name == "nt":
+if os.name == "nt" and sys.stdout.isatty():
     os.system("")
 
 #: Ranges enrichment claims to enforce. Kept independent of enrich_hdf5.py on
@@ -48,8 +49,9 @@ RANGE = {
 }
 
 #: Leaves that must not contain exact zero among finite values. Amplitude and
-#: coherence zeros are off-swath fill; unwrapped-phase zeros are regions the
-#: unwrapper could not resolve. Real measurements do not land on exact 0.0.
+#: coherence zeros are treated as off-swath fill by this pipeline; exact-zero
+#: unwrapped phase is also removed by convention. True zero phase can exist,
+#: so passing this check is not proof that every retained value is a measurement.
 NO_EXACT_ZERO = ("amp1", "amp2", "cor", "unw")
 
 DTYPE = {"int": "complex64", "coherence_mask": "uint8"}

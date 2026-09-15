@@ -35,6 +35,9 @@ import warnings
 import webbrowser
 from datetime import datetime
 from pathlib import Path
+from build_provenance import capture_sources, file_identity, new_record, read_lineage
+
+_EXPORT_SOURCES = capture_sources(__file__)
 
 warnings.filterwarnings("ignore")
 
@@ -73,10 +76,13 @@ CMAP_BY_LEAF = {
     "amp1": "magma", "amp2": "magma", "amp": "magma",
 }
 
-#: Units per leaf, for the readout. Blank where the quantity is dimensionless.
+#: Fallback readout units when the source has no unit attribute. Blank means
+#: dimensionless or unspecified (including uncalibrated radar amplitude).
 UNIT_BY_LEAF = {
     "elevation": "m", "hgt": "m", "snow_depth": "m", "veg_height": "m",
     "unw": "rad", "cor": "", "amp1": "", "amp2": "",
+    "slope": "°", "aspect": "°",
+    "incidence_angle_flat": "°", "local_incidence_angle": "°",
 }
 
 #: Human-readable names. The leaf names are JPL/NSIDC shorthand and mean
@@ -96,8 +102,8 @@ LABEL_BY_LEAF = {
 STRETCH_PERCENTILE = {"amp1", "amp2", "amp", "magnitude"}
 
 POL_RE = re.compile(r"^(HH|HV|VH|VV)$")
-PAIR_RE = re.compile(r"_(\d{8})_(\d{8})(?:$|/)")
-DATE_RE = re.compile(r"^(\d{8})$")
+PAIR_RE = re.compile(r"(?:(.+)_)?(\d{8})_(\d{8})$")
+DATE_RE = re.compile(r"(?:(.+)_)?(\d{8})$")
 
 
 def pick_terrain_stride(gh: int, gw: int) -> int:
@@ -133,32 +139,56 @@ def domain_of(path: str) -> str:
 
 
 def describe(path: str, leaf: str, suffix: str = "") -> dict:
-    """Pull polarisation and acquisition dates out of a dataset path."""
+    """Qualify a quantity using its enriched or base acquisition structure."""
     parts = path.split("/")
     # Only radar paths carry a polarisation. The LiDAR branch uses VH as the
     # group name for vegetation height, which is not the VH cross-pol channel,
     # and labelling it as one would be a plain misstatement of what the array is.
-    pol = (next((p for p in parts if POL_RE.match(p)), "")
-           if path.startswith("science/UAVSAR") else "")
-    date = ""
-    m = PAIR_RE.search(path)
-    if m:
-        a, b = m.group(1), m.group(2)
-        date = (f"{a[:4]}-{a[4:6]}-{a[6:8]}" if a == b
-                else f"{a[4:6]}/{a[6:8]} → {b[4:6]}/{b[6:8]} {a[:4]}")
-    else:
-        d = next((p for p in parts if DATE_RE.match(p)), "")
-        if d:
-            date = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    radar = parts[:2] == ["science", "UAVSAR"]
+    pol = next((p for p in parts if POL_RE.fullmatch(p)), "") if radar else ""
+    date = line = ""
+    # Enriched: UAVSAR/date_pair/flight_line/...; base: product/line_date_pair/...
+    # Match complete group components, never dates embedded in a dataset name.
+    for i, part in enumerate(parts[:-1]):
+        pair = PAIR_RE.fullmatch(part)
+        single = DATE_RE.fullmatch(part) if not pair else None
+        if not (pair or single):
+            continue
+        prefix, a = (pair or single).group(1, 2)
+        if prefix and not radar:
+            continue
+        b = pair.group(3) if pair else a
+        date = f"{a[:4]}-{a[4:6]}-{a[6:8]}"
+        if a != b:
+            date += f" → {b[:4]}-{b[4:6]}-{b[6:8]}"
+        if radar:
+            line = prefix or (parts[i + 1] if i == 2 and i + 2 < len(parts) else "")
+        break
 
     name = LABEL_BY_LEAF.get(leaf, leaf)
     if suffix:
         name = f"{name} {suffix}"
-    bits = [name] + [x for x in (pol, date) if x]
+    bits = [name] + [x for x in (date, line, pol) if x]
     # `short` is what a tab can fit; `label` is the fully qualified name the
     # legend and the info card carry.
     return {"label": "  ·  ".join(bits), "short": name, "pol": pol, "date": date,
             "leaf": leaf + (f" {suffix}" if suffix else "")}
+
+
+def display_unit(leaf: str, attrs) -> str:
+    """Use declared units without changing values or copying convention prose."""
+    unit = str(attr_to_json(attrs.get("units", attrs.get("unit", ""))) or "").strip()
+    if not unit:
+        return UNIT_BY_LEAF.get(leaf, "")
+    normalized = unit.lower()
+    if normalized in {"°", "deg"} or re.match(r"degrees?\b", normalized):
+        return "°"
+    if normalized in {"rad", "radian", "radians"}:
+        return "rad"
+    if (normalized in {"1", "unitless", "dimensionless", "fraction", "fraction, 0-1"}
+            or (leaf == "coherence_mask" and normalized == "1 = usable, 0 = decorrelated, 255 = nodata")):
+        return ""
+    return unit
 
 
 def block_mean(a, stride):
@@ -291,9 +321,11 @@ def build_site(site: str, path: Path, args, sites: list) -> tuple:
     insitu: dict[str, dict] = {}
     surveys: list[dict] = []
     acquisitions: list[dict] = []
+    input_file = file_identity(path)
 
     with h5py.File(path, "r") as f:
         ident = {k: attr_to_json(v) for k, v in f["identification"].attrs.items()}
+        parent_lineage = read_lineage(f['identification'].attrs)
         gh, gw = (int(v) for v in f["identification"].attrs["common_grid_shape"])
         a, b, c, d, e, ff = (float(v) for v in
                              f["identification"].attrs["common_grid_transform"])
@@ -452,7 +484,7 @@ def build_site(site: str, path: Path, args, sites: list) -> tuple:
                 # a false fringe everywhere the interferogram wraps.
                 for suffix, arr, cmap, unit, stretch in (
                         ("|magnitude|", block_mean(np.abs(raw), st),
-                         "magma", "", True),
+                         "magma", entry["attrs"].get("magnitude_units", ""), True),
                         ("∠phase", np.angle(block_mean(raw, st)),
                          "cyclic", "rad", False)):
                     packed = quantise(arr, stretch=stretch)
@@ -479,7 +511,7 @@ def build_site(site: str, path: Path, args, sites: list) -> tuple:
                 if q:
                     arrays[name] = {**q, **native,
                                     "cmap": CMAP_BY_LEAF.get(leaf, "viridis"),
-                                    "unit": UNIT_BY_LEAF.get(leaf, ""),
+                                    "unit": display_unit(leaf, entry["attrs"]),
                                     "source": name, "domain": dom,
                                     "cell_m": res * st,
                                     **describe(name, leaf)}
@@ -495,7 +527,21 @@ def build_site(site: str, path: Path, args, sites: list) -> tuple:
         tree.extend(derived)
         tree.sort(key=lambda t: t["path"])
 
+    export_lineage = new_record('explorer_data_export', _EXPORT_SOURCES,
+        {'site': site, 'terrain_stride': fine, 'data_stride': coarse,
+         'with_insitu': bool(getattr(args, 'with_insitu', False)),
+         'grid_shape': [gh, gw], 'grid_transform': [a, b, c, d, e, ff], 'resolution_m': res,
+         'fine_prefix': FINE_PREFIX, 'terrain_bits': 16, 'data_bits': 8,
+         'stretch_percentiles': [2, 98], 'stretch_leaves': sorted(STRETCH_PERCENTILE),
+         'aspect_resultant_tolerance': ASPECT_RESULTANT_TOLERANCE,
+         'complex_phase_aggregation': 'argument_of_complex_mean',
+         'roster': sites,
+         'input_status': 'unchanged_size_mtime' if input_file == file_identity(path) else 'changed_during_export'},
+        inputs=[{'dataset_paths': sorted({item['source'] for item in arrays.values()}),
+                 'dataset_lineage_location': 'payload.tree[].attrs'}],
+        parent={'file': input_file, 'lineage': parent_lineage})
     payload = {
+        "build_provenance": export_lineage,
         "file": path.name,
         "site": site,
         "sites": sites,

@@ -32,6 +32,10 @@ function productGuide(P,key){
   const source=L.source||key,a=get(source),synthetic=get(key);
   const kind=guideKind(key,L),dem=get(P.dem_path),from=a.derived_from||synthetic.derived_from;
   const upstream=from?get(from):a;
+  const cleaned=a.derived_from_stage==="enriched_base_after_cleaning"&&a.derived_from_archive==="self";
+  const downhill=a.aspect_convention==="downhill_clockwise_from_grid_north";
+  const restricted=["projected_peg_track_half_plane_v1","projected_peg_track_half_plane_v2"].includes(a.look_side_mask_method);
+  const headingNote=a.heading_conversion_method==="wgs84_geodesic_tangent_100m"?"Geographic heading is converted to the local projected-grid bearing using a WGS84 geodesic tangent; full-track curvature is not reconstructed.":"No heading conversion is recorded; earlier geometry applied geographic heading directly to projected axes.";
   const site=P.identification.site_name||P.site;
   const g={kind,title:GUIDE_LABELS[kind]||L.label||L.short||kind,site,summary:"",meaning:[],method:[],cautions:[],context:[],references:[]};
   const present=v=>v!==undefined&&v!==null&&v!=="";
@@ -58,13 +62,13 @@ function productGuide(P,key){
       g.summary="Terrain steepness estimated from changes in this site's elevation grid.";
       g.meaning=["0° is horizontal; larger angles are steeper. Slope is not snow depth or radar viewing angle."];
       g.method=["The enrichment generator uses Horn's weighted 3×3 elevation gradients: slope = atan(sqrt(dzdx² + dzdy²)), converted to degrees."];
-      g.cautions=["Missing elevation affects the derivative and its neighbouring cells. Terrain detail depends on the source DEM and grid spacing.","The generator reads its input DEM before writing the cleaned enriched elevation copy; do not assume a derivative was recomputed after that cleaning."];
+      g.cautions=["Missing elevation affects the derivative and its neighbouring cells. Terrain detail depends on the source DEM and grid spacing.",cleaned?"Recorded input: the cleaned DEM in this enriched archive.":"Input processing stage is not established by this metadata; earlier derivatives used inputs before enrichment cleaning."];
       sourceRows(dem,"Terrain");refs("terrain");break;
     case "aspect":
       g.summary="A circular terrain-orientation angle computed from this site's elevation gradients.";
       g.meaning=["Aspect normally describes the direction a slope faces. Its scale wraps at 360°/0°; use circular methods such as sin/cos for modelling.","The current generator stores missing values where gradient magnitude is below 10⁻⁹, treating near-flat terrain as undefined."];
-      g.method=["Uses the Horn 3×3 gradients. Current code applies (90° − atan2(dzdy, −dzdx)) mod 360°."];
-      g.cautions=["Confirmed implementation issue: with north-positive dzdy, the current formula reflects north/south relative to downhill aspect. A north-rising plane produces 0° here, although its downhill direction is 180°. Do not treat stored values as validated downhill bearings.","This help does not correct stored angles. The export also averages aspect arithmetically: 359° and 1° average to 180°, not north. Use circular aggregation for quantitative analysis."];
+      g.method=[downhill?"Uses Horn gradients and the downhill grid bearing: atan2(−dzdx, −dzdy) modulo 360°.":"Legacy aspect formula: (90° − atan2(dzdy, −dzdx)) modulo 360°; corrected convention is not recorded."];
+      g.cautions=[downhill?"Bearings are relative to grid north. Models trained on the older reflected convention need compatible features.":"Legacy aspect reflects north/south relative to downhill bearing; these notes do not repair stored angles.",L.aggregation?.method==="circular_mean_degrees"?"This export records circular averaging of aspect directions.":"No circular aggregation is recorded; earlier exports used arithmetic means that fail across the 0°/360° seam."];
       sourceRows(dem,"Terrain");refs("terrain");break;
     case "forest_cover_fraction":{
       const threshold=number(a.canopy_height_threshold_m),nominal=number(a.window_m),res=number(P.grid.res_m);
@@ -78,7 +82,8 @@ function productGuide(P,key){
       }
       row("Canopy threshold",threshold!==null?threshold+" m, inclusive (≥)":"Not recorded");sourceRows(upstream,"Vegetation");
       g.cautions.push("A neighbourhood with no valid input stays missing. A missing centre cell can still receive a value from valid neighbours; coverage can therefore extend beyond the measured vegetation footprint.","Use the actual source survey dates below when combining this layer with radar. A later canopy survey is not a contemporaneous measurement for an earlier snow season.");
-      g.cautions.push("The calculation reads the original vegetation array, before the cleaned enriched copy. Finite means numerically finite, not independently validated. Neighbourhoods are clipped at grid edges; this paper supports the canopy-cover concept, not proof of this implementation's exact parameters.");
+      g.cautions.push(cleaned?"Recorded input: cleaned vegetation in the same enriched archive.":"The input stage is not established here; earlier versions used vegetation before enrichment cleaning.");
+      g.cautions.push("Finite means numerically finite, not independently validated. Neighbourhoods are clipped at grid edges.");
       refs("canopy");break;}
     case "coherence_mask":{
       const threshold=number(a.coherence_threshold);
@@ -91,7 +96,11 @@ function productGuide(P,key){
       g.summary="The angle between an estimated ground-to-aircraft line of sight and this site's DEM-derived surface normal.";
       g.meaning=["0° means the sensor direction aligns with the terrain normal. Larger angles are more oblique. Terrain tilt makes this differ from the flat-surface incidence angle.","The incidence ≥ 90° condition includes perpendicular and back-facing terrain in this approximation; it is not a terrain-occlusion test or a radar-shadow measurement."];
       g.method=["The generator approximates the aircraft as a straight track through the annotation peg point at fixed reported altitude, then compares the ground-to-track vector with DEM-derived normals."];
-      g.cautions=["Approximate geometry: detailed aircraft navigation, squint and terrain occlusion are not modelled. The current routine receives a look-direction label but does not apply that argument to its calculation.","Missing DEM cells are temporarily replaced by the whole-site finite mean to estimate normals; missing centres are masked again afterward. Neighbouring normals can still be affected by that fill.","The implementation assumes an unrotated, square metric grid; it uses east spacing for both gradients, applies heading directly to projected axes, and performs no vertical-datum conversion or meridian-convergence correction.","Finite geometry cells can extend outside the radar swath. An incidence-threshold percentage is not observed radar coverage."];
+      g.cautions=["Approximate geometry: detailed aircraft navigation, squint and terrain occlusion are not modelled.","Missing DEM cells are temporarily replaced by the whole-site finite mean to estimate normals; missing centres are masked again afterward. Neighbouring normals can still be affected by that fill.","The implementation assumes an unrotated, square metric grid and performs no vertical-datum conversion.",headingNote,"Finite geometry cells can extend outside the radar swath. An incidence-threshold percentage is not observed radar coverage."];
+      g.cautions.push(restricted?
+        "Both incidence arrays retain the declared look side of the approximate projected track; opposite-side and near-track cells are missing. The finite-cell percentage is measured after that restriction. This is not a radar-swath mask.":
+        "No look-side restriction is recorded. Earlier producer versions accepted the look-direction label without applying it.");
+      if(a.vertical_reference_note)g.cautions.push(a.vertical_reference_note);
       if(a.incidence_ge_90_status==='no_valid_incidence'){
         row("Incidence ≥ 90° · finite-cell share","Unavailable: no finite incidence cells");
       }else if(a.incidence_ge_90_status==='computed'&&typeof a.incidence_ge_90_fraction==='number'&&Number.isFinite(a.incidence_ge_90_fraction)){
@@ -109,7 +118,11 @@ function productGuide(P,key){
       g.meaning=["Compare this with local incidence angle to inspect the effect of terrain orientation. Both are stored in degrees here."];
       g.method=["Uses the same straight peg-track / fixed-altitude approximation as local incidence, but compares the viewing vector with the upward vertical direction. DEM ground elevation still enters the ground-to-platform height."];
       g.cautions=["This is not a flat-elevation Earth model or a direct aircraft navigation solution. It ignores terrain tilt, not the site's elevation; it shares the approximate track geometry limitations."];
-      g.cautions.push("The look-direction argument is not applied. Heading is used directly in projected axes without convergence correction, and no vertical-datum reconciliation is performed. Missing DEM centres remain missing.");
+      g.cautions.push(headingNote,"No vertical-datum reconciliation is performed. Missing DEM centres remain missing.");
+      if(a.vertical_reference_note)g.cautions.push(a.vertical_reference_note);
+      g.cautions.push(restricted?
+        "Both incidence arrays retain the declared look side of the approximate projected track; opposite-side and near-track cells are missing. This is not a radar-swath mask.":
+        "No look-side restriction is recorded. Earlier producer versions accepted the look-direction label without applying it.");
       sourceRows(dem,"Terrain");refs("geometry");break;
     case "magnitude":
       g.summary="The magnitude of the complex interferogram, derived for display from this radar pair.";
@@ -196,10 +209,13 @@ function productGuide(P,key){
  * textbook replacement. Historical exports do not record a source-code hash.
  */
 function guideCalculation(kind,P,L,a){
-  const calc=(equations,variables,source,label="Exact math · current implementation")=>({equations,variables,source,label});
+  const cleaned=a.derived_from_stage==="enriched_base_after_cleaning"&&a.derived_from_archive==="self";
+  const downhill=a.aspect_convention==="downhill_clockwise_from_grid_north";
+  const restricted=["projected_peg_track_half_plane_v1","projected_peg_track_half_plane_v2"].includes(a.look_side_mask_method);
+  const calc=(equations,variables,source,label="Math for recorded method")=>({equations,variables,source,label});
   const horn=["North-up 3 × 3 neighbourhood:","a  b  c","d  z  f","g  h  i","gx = ((c + 2f + i) − (a + 2d + g)) / (8r)","gy = ((a + 2b + c) − (g + 2h + i)) / (8r)"];
   const gradientVars=[["z, a…i","Elevation samples in metres; row above is north."],["r",`Square-grid spacing: ${P.grid.res_m} m here. Edge padding repeats boundary cells.`],["gx, gy","East-positive and north-positive elevation gradients (m/m)."],["deg(x)","x × 180/π; atan2 and acos below take/return radians."]];
-  if(kind==="slope"||kind==="aspect")return calc([...horn,kind==="slope"?"slope = deg(atan(√(gx² + gy²)))":"aspect = (90 − deg(atan2(gy, −gx))) mod 360",...(kind==="aspect"?["aspect = NaN if √(gx² + gy²) < 10⁻⁹"]:[]),"Missing centre elevation → missing output."],gradientVars,"enrich_hdf5.py · slope_aspect (input DEM before enrichment cleaning)");
+  if(kind==="slope"||kind==="aspect")return calc([...horn,kind==="slope"?"slope = deg(atan(√(gx² + gy²)))":downhill?"aspect = deg(atan2(−gx, −gy)) mod 360":"aspect = (90 − deg(atan2(gy, −gx))) mod 360",...(kind==="aspect"?["aspect = NaN if √(gx² + gy²) < 10⁻⁹"]:[]),"Missing centre elevation → missing output."],gradientVars,"enrich_hdf5.py · slope_aspect ("+(cleaned?"cleaned DEM":"input stage unestablished")+")");
   if(kind==="forest_cover_fraction")return calc([
     "valid(j) = 1 if vj is finite, otherwise 0",
     "hit(j) = valid(j) × 1[vj ≥ hc]",
@@ -209,17 +225,18 @@ function guideCalculation(kind,P,L,a){
     "Wi is clipped to the array boundary.",
     "FCFi = Σj∈Wi hit(j) / Σj∈Wi valid(j)",
     "FCFi = NaN when the denominator is zero."
-  ],[["vj","Original input vegetation height in metres."],["hc",a.canopy_height_threshold_m!=null?`${a.canopy_height_threshold_m} m, from this layer's recorded threshold.`:"Threshold not recorded; do not infer."],["window_m",a.window_m!=null?`${a.window_m} m nominal window, as recorded.`:"Window not recorded."],["r",`${P.grid.res_m} m archive spacing.`],["round","Python round: nearest integer, ties to even. Window width is 2R + 1 cells, not w."],["1[condition]","1 if the condition is true; otherwise 0."]],"enrich_hdf5.py · box_fraction + canopy caller (original vegetation input)");
+  ],[["vj","Original input vegetation height in metres."],["hc",a.canopy_height_threshold_m!=null?`${a.canopy_height_threshold_m} m, from this layer's recorded threshold.`:"Threshold not recorded; do not infer."],["window_m",a.window_m!=null?`${a.window_m} m nominal window, as recorded.`:"Window not recorded."],["r",`${P.grid.res_m} m archive spacing.`],["round","Python round: nearest integer, ties to even. Window width is 2R + 1 cells, not w."],["1[condition]","1 if the condition is true; otherwise 0."]],"enrich_hdf5.py · box_fraction ("+(cleaned?"cleaned vegetation":"input stage unestablished")+")");
   if(kind==="coherence_mask")return calc(["mask = 255   if γ is not finite","mask = 1     if γ is finite and γ ≥ τ","mask = 0     if γ is finite and γ < τ"],[["γ","Coherence after pipeline swath/range cleaning."],["τ",a.coherence_threshold!=null?String(a.coherence_threshold)+" (recorded for this layer)":"Not recorded; verify before interpreting."],["255","Archive uint8 missing code; never included in the display block mean."]],"enrich_hdf5.py · coherence_mask construction; make_explorer.py · declared_nodata_to_nan");
   if(kind==="local_incidence_angle"||kind==="incidence_angle_flat")return calc([
     "(pE, pN) = project(peg_lon, peg_lat, EPSG:4326 → site CRS)",
     "E = c₀ + a₀(col + ½); N = f₀ + e₀(row + ½)",
-    "ψ = heading_deg × π/180; u = (sin ψ, cos ψ)",
+    a.heading_conversion_method==="wgs84_geodesic_tangent_100m"?"ψ = projected WGS84 geodesic tangent bearing; u = (sin ψ, cos ψ)":"ψ = heading_deg × π/180; u = (sin ψ, cos ψ)",
     "t = (E − pE)uE + (N − pN)uN",
     "A = (pE + t uE, pN + t uN, H)",
     "ℓ = (A − (E, N, z)) / ‖A − (E, N, z)‖",
     ...(kind==="local_incidence_angle"?["For normals: fill missing z with the whole-site finite mean.",...horn,"n = (−gx, −gy, 1) / √(gx² + gy² + 1)","θlocal = deg(acos(clamp(ℓ · n, −1, 1)))"]:["θflat = deg(acos(clamp(ℓup, −1, 1)))"]),
-    "Original missing centre z → missing output."
+    "Missing centre z → missing output.",
+    ...(restricted?["dright = (E − pE)uN − (N − pN)uE","Left retains dright < −10⁻⁷ m; Right retains dright > 10⁻⁷ m; otherwise both angles are missing."]:[])
   ],[["a₀, c₀, e₀, f₀","Archive affine transform: east step/origin and north step/origin (metres); rotation terms are ignored."],["pE, pN","Projected annotation peg point; source coordinates are listed below."],["H, ψ","Reported platform altitude (metres) and heading for this radar pair, not a shared site constant."],["r",`|a₀| = ${P.grid.res_m} m, used for both normal-gradient axes.`],["ℓ, n","Unit ground-to-platform vector and upward unit terrain normal."],["deg(x)","x × 180/π; clamp limits round-off before acos."]],"enrich_hdf5.py · local_incidence + surface_normals (straight peg-track approximation)");
   if(kind==="magnitude")return calc(["Ij = xj + i yj","mj = |Ij| = √(xj² + yj²)","mblock = nanmeanj∈B(mj)"],[["Ij","Complex source interferogram sample."],["B","One complete export block; all-NaN blocks remain missing."],["mblock","Mean of magnitudes, NOT magnitude of the complex mean."]],"make_explorer.py · complex-array branch + block_mean");
   if(kind==="wrapped_phase")return calc(["ĪB = nanmeanj∈B(Ij)","φB = atan2(Im(ĪB), Re(ĪB))"],[["B","Complete display block."],["φB","Wrapped phase in radians, returned in (−π, π] with signed-zero conventions at the boundary."],["ĪB = 0","No physical phase direction; a finite NumPy return does not resolve this."]],"make_explorer.py · np.angle(block_mean(raw, stride))");

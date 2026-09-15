@@ -13,7 +13,8 @@ try {
 }
 
 test('exports the complete numerical API', () => {
-  assert.deepEqual(Object.keys(core).sort(), ['center', 'decode', 'difference', 'grid', 'sample']);
+  assert.deepEqual(Object.keys(core).sort(),
+    ['center', 'decode', 'difference', 'grid', 'maskOptions', 'maskPreview', 'maskValue', 'sample']);
 });
 
 function b64(bytes) {
@@ -28,7 +29,79 @@ test('UMD build exposes SnowCompareCore in a browser context', () => {
   const context = {};
   vm.runInNewContext(fs.readFileSync(require.resolve('./core.js'), 'utf8'), context);
   assert.deepEqual(Object.keys(context.SnowCompareCore).sort(),
-    ['center', 'decode', 'difference', 'grid', 'sample']);
+    ['center', 'decode', 'difference', 'grid', 'maskOptions', 'maskPreview', 'maskValue', 'sample']);
+});
+
+test('mask settings default to averages and validate a configurable inclusive cutoff', () => {
+  assert.equal(typeof core.maskOptions, 'function');
+  assert.deepEqual(core.maskOptions(), {mode: 'average', cutoff: 0.5});
+  const selected = {mode: 'binary', cutoff: 0.75};
+  assert.deepEqual(core.maskOptions(selected), selected);
+  assert.notEqual(core.maskOptions(selected), selected);
+  for (const cutoff of [0, 0.35, 1]) assert.equal(core.maskOptions({cutoff}).cutoff, cutoff);
+  for (const options of [null, [], 'binary', {mode: 'other'}, {mode: null},
+    ...[-0.01, 1.01, NaN, Infinity, '0.5', null].map(cutoff => ({cutoff}))]) {
+    assert.throws(() => core.maskOptions(options), TypeError);
+  }
+});
+
+test('mask previews preserve averages, classify cutoff ties, and keep invalid cells missing', () => {
+  assert.equal(typeof core.maskPreview, 'function');
+  const source = new Float32Array([0, 0.25, 0.5, 0.75, 1, NaN, Infinity, -1e30, 255]);
+  const before = Array.from(source);
+  const atHalf = core.maskPreview(source, {mode: 'binary'});
+  assert.ok(atHalf instanceof Float32Array);
+  assert.deepEqual(Array.from(atHalf), [0, 0, 1, 1, 1, NaN, NaN, NaN, NaN]);
+  assert.deepEqual(Array.from(core.maskPreview(source, {mode: 'binary', cutoff: 0.75})),
+    [0, 0, 0, 1, 1, NaN, NaN, NaN, NaN]);
+  const average = core.maskPreview(source, {mode: 'average', cutoff: 0.75});
+  assert.deepEqual(Array.from(average), [0, 0.25, 0.5, 0.75, 1, NaN, NaN, NaN, NaN]);
+  average[0] = 0.9;
+  assert.deepEqual(Array.from(source), before);
+  assert.deepEqual(Array.from(core.maskPreview([0, 0.5, 1, NaN], {mode: 'binary', cutoff: 0})), [1, 1, 1, NaN]);
+  assert.deepEqual(Array.from(core.maskPreview([0, 0.5, 1, NaN], {mode: 'binary', cutoff: 1})), [0, 0, 1, NaN]);
+  assert.deepEqual(Array.from(core.maskPreview([], {mode: 'binary'})), []);
+  for (const value of [null, '01', new DataView(new ArrayBuffer(4))]) {
+    assert.throws(() => core.maskPreview(value), TypeError);
+  }
+  assert.throws(() => core.maskPreview([], {cutoff: 2}), TypeError);
+});
+
+test('mask probes and arrays use the same decoded fractions without rounding to displayed text', () => {
+  assert.equal(typeof core.maskValue, 'function');
+  const decoded = core.decode({w: 5, h: 1, bits: 8, b64: b64([0, 1, 100, 128, 255]), lo: 0.2421875, hi: 1});
+  const before = Array.from(decoded);
+  for (const mode of ['average', 'binary']) for (const cutoff of [0, 0.5, 0.7, 1]) {
+    const options = {mode, cutoff};
+    assert.deepEqual(Array.from(core.maskPreview(decoded, options)),
+      Array.from(decoded, value => core.maskValue(value, options)));
+  }
+  assert.deepEqual(Array.from(decoded), before);
+  assert.equal(core.maskValue(0.5 - 1e-9, {mode: 'binary'}), 0);
+  assert.equal(core.maskValue(0.5, {mode: 'binary'}), 1);
+  assert.equal(core.maskValue(0.5 + 1e-9, {mode: 'binary'}), 1);
+  assert.equal(core.maskValue(Math.fround(0.7), {mode: 'binary', cutoff: 0.7}), 0);
+  for (const value of [NaN, Infinity, -Infinity, -0.1, 1.1, 255, -1e30, null, '0.9']) {
+    assert.ok(Number.isNaN(core.maskValue(value, {mode: 'binary', cutoff: 0})));
+  }
+});
+
+test('mask comparison uses the selected cutoff and excludes invalid fractions from statistics', () => {
+  const a = new Float32Array([0.5, 0.75, 1, 0, NaN, 255, -1e30]);
+  const b = new Float32Array([0.75, 0.5, 1, 0, 1, 0, 1]);
+  const beforeA = Array.from(a), beforeB = Array.from(b);
+  const result = core.difference(a, b, 'mask', 0.75);
+  assert.deepEqual(Array.from(result.values), [1, -1, 0, 0, NaN, NaN, NaN]);
+  assert.equal(result.stats.count, 4);
+  assert.equal(result.stats.mean, 0);
+  assert.equal(result.stats.mae, 0.5);
+  assert.deepEqual(Array.from(core.difference([0, 1], [1, 0], 'mask', 0).values), [0, 0]);
+  assert.deepEqual(Array.from(core.difference([0, 1], [1, 0], 'mask', 1).values), [1, -1]);
+  for (const cutoff of [-1, 1.1, NaN, '0.5', null]) {
+    assert.throws(() => core.difference([0], [1], 'mask', cutoff), TypeError);
+  }
+  assert.deepEqual(Array.from(a), beforeA);
+  assert.deepEqual(Array.from(b), beforeB);
 });
 
 test('decode handles 8-bit nodata, endpoints, and a real zero', () => {

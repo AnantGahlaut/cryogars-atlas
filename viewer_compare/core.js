@@ -122,12 +122,43 @@
     return result;
   }
 
-  function difference(a, b, mode) {
+  // Preview inputs are decoded passing fractions; preserve the originals for mode/cutoff changes.
+  function maskOptions(options = {}) {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+      throw new TypeError('Invalid mask options');
+    }
+    const mode = options.mode === undefined ? 'average' : options.mode;
+    const cutoff = options.cutoff === undefined ? 0.5 : options.cutoff;
+    if (!['average', 'binary'].includes(mode) || !finite(cutoff) || cutoff < 0 || cutoff > 1) {
+      throw new TypeError('Mask mode must be average or binary and cutoff must be a number from 0 to 1');
+    }
+    return {mode: mode, cutoff: cutoff};
+  }
+
+  function maskCell(value, options) {
+    if (!finite(value) || value < 0 || value > 1) return NaN;
+    return options.mode === 'binary' ? Number(value >= options.cutoff) : value;
+  }
+
+  function maskValue(value, options) {
+    return maskCell(value, maskOptions(options));
+  }
+
+  function maskPreview(values, options) {
+    options = maskOptions(options);
+    if (!numericArray(values)) throw new TypeError('Mask values must be a numeric array');
+    const preview = new Float32Array(values.length);
+    for (let i = 0; i < values.length; i += 1) preview[i] = maskCell(values[i], options);
+    return preview;
+  }
+
+  function difference(a, b, mode, cutoff) {
     mode = mode === undefined ? 'linear' : mode;
     if (!numericArray(a) || !numericArray(b) || a.length !== b.length ||
         !['linear', 'degrees', 'radians', 'mask'].includes(mode)) {
       throw new TypeError('Invalid difference input');
     }
+    const mask = mode === 'mask' ? maskOptions({mode: 'binary', cutoff: cutoff}) : null;
     const values = new Float32Array(a.length);
     values.fill(NaN);
     let count = 0;
@@ -142,7 +173,10 @@
       let value = b[i] - a[i];
       if (mode === 'degrees' || mode === 'radians') {
         value = ((value + period / 2) % period + period) % period - period / 2;
-      } else if (mode === 'mask') value = Number(b[i] >= 0.5) - Number(a[i] >= 0.5);
+      } else if (mask) {
+        value = maskCell(b[i], mask) - maskCell(a[i], mask);
+        if (!Number.isFinite(value)) continue;
+      }
       values[i] = value;
       count += 1;
       sum += value;
@@ -169,6 +203,9 @@
     grid: grid,
     center: center,
     sample: sample,
+    maskOptions: maskOptions,
+    maskValue: maskValue,
+    maskPreview: maskPreview,
     difference: difference
   };
 }));

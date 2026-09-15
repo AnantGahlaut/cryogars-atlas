@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 
 import enrich_hdf5 as E
-from test_derivative_inputs import ANNOTATION, DEM, GEOMETRY, RADAR_SOURCE, SHAPE, identify
+from test_derivative_inputs import ANNOTATION, DEM, GEOMETRY, RADAR_SOURCE, RADAR_OUTPUT, SHAPE, identify
 
 
 CASES = (
@@ -99,6 +99,30 @@ class TestIncidenceSummary(unittest.TestCase):
                                  record["original_local_bytes"])
                 self.assertEqual(h5[f"{GEOMETRY}/incidence_angle_flat"][...].tobytes(),
                                  record["original_flat_bytes"])
+
+    def test_missing_or_invalid_look_side_skips_geometry_with_recorded_reason(self):
+        for name, look in (("missing", None), ("invalid", "Up"), ("no_scalars", None)):
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as temp:
+                annotation = dict(ANNOTATION)
+                if look is None:
+                    del annotation["radar_look_direction"]
+                else:
+                    annotation["radar_look_direction"] = look
+                if name == "no_scalars":
+                    annotation.clear()
+                output = Path(temp) / "skipped.enriched.h5"
+                with patch.object(E, "cached_annotation", return_value={}), \
+                        patch.object(E, "annotation_scalars", return_value=annotation), \
+                        patch.object(E, "local_incidence") as incidence:
+                    result, _ = E.enrich(self.source, output, Path(temp) / "cache", session=object())
+                self.assertEqual(result, 0)
+                incidence.assert_not_called()
+                with h5py.File(output, "r") as h5:
+                    self.assertNotIn(GEOMETRY, h5)
+                    self.assertIn("skipped", h5[RADAR_OUTPUT].attrs["geometry_status"])
+                    self.assertIn("radar_look_direction", h5[RADAR_OUTPUT].attrs["geometry_note"])
+                    self.assertEqual(h5[f"{RADAR_OUTPUT}/HH/cor"].shape, SHAPE)
+                self.assertEqual(self.source.read_bytes(), self.original_bytes)
 
 
 if __name__ == "__main__":

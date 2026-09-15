@@ -84,6 +84,12 @@ def incidence_from(dem):
 
 
 class TestCleanedDerivativeInputs(unittest.TestCase):
+    def test_copied_auxiliary_preserves_original_producer(self):
+        path = 'science/LIDAR/DEM/grids/quality_flags'
+        with h5py.File(self.source, 'r') as source, h5py.File(self.output, 'r') as output:
+            np.testing.assert_array_equal(output[path][...], source[path][...])
+            self.assertEqual(dict(output[path].attrs), dict(source[path].attrs))
+
     @classmethod
     def setUpClass(cls):
         temp = tempfile.TemporaryDirectory()
@@ -131,6 +137,10 @@ class TestCleanedDerivativeInputs(unittest.TestCase):
         with h5py.File(cls.source, "w") as h5:
             identify(h5)
             source_array(h5, DEM, cls.source_dem)
+            auxiliary = h5.create_dataset('science/LIDAR/DEM/grids/quality_flags', data=[0, 1, 2])
+            auxiliary.attrs['build_provenance_json'] = json.dumps({
+                'artifact_id': 'original-flags', 'stage': 'provider-quality-flags'})
+            auxiliary.attrs['artifact_id'] = 'original-flags'
             for path, vegetation in cls.source_vegetation.items():
                 source_array(h5, path, vegetation)
             source_array(h5, f"{RADAR_SOURCE}/HH/cor", cls.source_cor)
@@ -246,7 +256,7 @@ class TestCleanedDerivativeInputs(unittest.TestCase):
                for p in VEGETATION},
         }
         with h5py.File(self.output, "r") as h5:
-            self.assertEqual(h5["identification"].attrs["enrichment_version"], "3.1.0")
+            self.assertEqual(h5["identification"].attrs["enrichment_version"], "3.3.0")
             for path, dependency in paths.items():
                 with self.subTest(path=path):
                     attrs = h5[path].attrs
@@ -254,7 +264,34 @@ class TestCleanedDerivativeInputs(unittest.TestCase):
                     self.assertIn(dependency, h5)
                     self.assertEqual(attrs["derived_from_archive"], "self")
                     self.assertEqual(attrs["derived_from_stage"], "enriched_base_after_cleaning")
-                    self.assertEqual(attrs["derivation_version"], "1.0")
+                    self.assertEqual(attrs["derivation_version"], "3.0" if "/GEOMETRY/" in path else
+                                     "2.0" if path.endswith('/aspect') else "1.0")
+                    if "/GEOMETRY/" in path:
+                        self.assertEqual(attrs["look_side_mask_method"], "projected_peg_track_half_plane_v2")
+                        self.assertEqual(attrs["heading_conversion_method"], "wgs84_geodesic_tangent_100m")
+                        self.assertTrue(np.isfinite(attrs["track_heading_grid_deg"]))
+                        self.assertEqual(attrs["radar_look_direction"], "Left")
+                        self.assertIn("not a radar-swath", attrs["look_side_mask_note"])
+                    if path.endswith('/aspect'):
+                        self.assertEqual(attrs['aspect_convention'], 'downhill_clockwise_from_grid_north')
+
+    def test_new_enrichment_lineage_distinguishes_unknown_parent_history(self):
+        with h5py.File(self.output, 'r') as h5:
+            record = json.loads(h5['identification'].attrs['build_provenance_json'])
+            self.assertEqual(record['stage'], 'enrichment')
+            self.assertEqual(record['source_status'], 'unchanged_since_capture')
+            self.assertEqual(record['parent']['lineage']['status'], 'unknown_not_recorded')
+            self.assertEqual(record['parent']['file']['identity_method'], 'filename_size_mtime_not_content_hash')
+            self.assertEqual(record['parameters']['with_insitu'], False)
+            self.assertEqual(record['parameters']['grid']['epsg'], EPSG)
+            self.assertIn('pyproj', record['dependencies'])
+            self.assertTrue(any(p.endswith('enrich_hdf5.py') for p in record['sources']))
+            self.assertEqual(record['inputs'][0]['scalars'], ANNOTATION)
+            for path in (DEM, f'{GEOMETRY}/local_incidence_angle', f'{E.DERIVED_GROUP}/aspect'):
+                link = json.loads(h5[path].attrs['build_provenance_json'])
+                self.assertEqual(link['artifact_id'], record['artifact_id'])
+                self.assertEqual(link['record_path'], '/identification')
+                self.assertEqual(link['dataset'], '/'+path)
 
 
 class TestEntirelyRemovedDem(unittest.TestCase):

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import io
 import json
 import logging
@@ -46,6 +47,10 @@ import warnings
 import zipfile
 from pathlib import Path
 from processing_metadata import processing_snapshot, record_processing_history, statistics_attrs
+from build_provenance import capture_sources, file_identity, new_record, read_lineage, store_lineage
+from build_hdf5 import _BUILD_SOURCES as _BASE_BUILD_SOURCES
+
+_BUILD_SOURCES = {**capture_sources(__file__), **_BASE_BUILD_SOURCES}
 
 warnings.filterwarnings("ignore")
 log = logging.getLogger("enrich")
@@ -168,7 +173,15 @@ def cached_annotation(session, url: str, cache: Path) -> dict:
     if not raw.exists():
         log.info("    fetching annotation (range request)")
         raw.write_text(fetch_annotation(session, url), encoding="utf-8")
-    return B.read_annotation(raw)
+    before = raw.read_bytes()
+    parsed = B.read_annotation(raw)
+    if raw.read_bytes() != before:
+        raise RuntimeError("Annotation changed while being read")
+    parsed['_snowex_annotation_source'] = {
+        'source_url': url, 'cache_filename': raw.name,
+        'sha256': hashlib.sha256(before).hexdigest(), 'bytes': len(before),
+        'identity_method': 'sha256_of_consumed_cached_annotation'}
+    return parsed
 
 
 def annotation_scalars(ann: dict) -> dict:
@@ -208,14 +221,16 @@ def slope_aspect(dem, res_m: float):
     dzdy = ((a + 2 * b + c) - (g + 2 * h + i)) / (8 * res_m)
 
     slope = np.degrees(np.arctan(np.hypot(dzdx, dzdy)))
-    aspect = np.degrees(np.arctan2(dzdy, -dzdx))
-    aspect = (90.0 - aspect) % 360.0          # compass bearing, 0 = north
+    # Downhill vector in projected east/north coordinates; clockwise from north.
+    aspect = np.degrees(np.arctan2(-dzdx, -dzdy)) % 360.0
     flat = np.hypot(dzdx, dzdy) < 1e-9
     aspect[flat] = np.nan
     bad = ~np.isfinite(dem)
     slope[bad] = np.nan
     aspect[bad] = np.nan
-    return slope.astype("float32"), aspect.astype("float32")
+    aspect = aspect.astype("float32")
+    aspect[aspect >= 360.0] = 0.0  # rounding at the circular seam
+    return slope.astype("float32"), aspect
 
 
 def surface_normals(dem, res_m: float):
@@ -264,28 +279,80 @@ def box_fraction(mask, valid, win_px: int):
     return out.astype("float32")
 
 
+def dem_vertical_reference(attrs):
+    """Provider-backed descriptions for the identified existing DEM products.
+
+    This records evidence only. A horizontal EPSG code never supplies a missing
+    vertical datum, and no vertical coordinate conversion is performed here.
+    """
+    dataset = str(attrs.get("source_dataset", ""))
+    filename = str(attrs.get("source_filename", ""))
+    url = str(attrs.get("source_url", ""))
+    if dataset == "SNEX20_QSI_DEM_3m" and "/SNEX20_QSI_DEM_3m/1/" in url:
+        return {
+            "dem_vertical_reference": "NAVD88 orthometric height (GEOID12b)",
+            "dem_vertical_reference_status": "confirmed_provider_guide",
+            "dem_vertical_reference_source": "https://nsidc.org/sites/default/files/documents/user-guide/multi_snex20_qsi_dem_3m-v001-userguide.pdf"}
+    if dataset == "SNEX_HRSI_SD_DEM_CO" and filename == "SNEX_HRSI_SD_DEM_CO_GM_DTM_1m_V01.0.tif":
+        return {
+            "dem_vertical_reference": "WGS84 ellipsoidal height",
+            "dem_vertical_reference_status": "confirmed_provider_linked_author_methods",
+            "dem_vertical_reference_source": "https://doi.org/10.1029/2023GL104871"}
+    return {"dem_vertical_reference": "Unresolved in exact-product provider metadata",
+            "dem_vertical_reference_status": "unresolved"}
+
+
+def projected_peg_track(peg_lat: float, peg_lon: float, heading_deg: float, epsg: int):
+    """Projected peg and local grid bearing of its WGS84 geodesic heading.
+
+    Project endpoints 100 m forward/backward along the geographic heading.
+    This accounts for local grid convergence, not curvature along a full pass.
+    """
+    from pyproj import Geod, Transformer
+
+    if not all(math.isfinite(v) for v in (peg_lat, peg_lon, heading_deg)):
+        raise ValueError("Peg coordinates and heading must be finite")
+    tf = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+    px, py = tf.transform(peg_lon, peg_lat)
+    geod = Geod(ellps="WGS84")
+    lon0, lat0, _ = geod.fwd(peg_lon, peg_lat, heading_deg + 180.0, 100.0)
+    lon1, lat1, _ = geod.fwd(peg_lon, peg_lat, heading_deg, 100.0)
+    x0, y0 = tf.transform(lon0, lat0)
+    x1, y1 = tf.transform(lon1, lat1)
+    if not all(math.isfinite(v) for v in (px, py, x0, y0, x1, y1)) or (x0 == x1 and y0 == y1):
+        raise ValueError("Could not establish a finite projected peg track")
+    return px, py, math.degrees(math.atan2(x1 - x0, y1 - y0)) % 360.0
+
+
 def local_incidence(dem, transform, epsg: int, peg_lat: float, peg_lon: float,
                     peg_heading_deg: float, altitude_m: float,
                     look_direction: str):
     """Local incidence angle, degrees, between the radar line of sight and the
     terrain normal.
 
-    UAVSAR flies a straight line through the peg point on the peg heading. For
+    Approximate UAVSAR with a straight line through the peg point on the peg
+    heading converted to the local projected-grid bearing. For
     each ground cell the nearest point on that track is found, the platform is
     placed above it at the reported altitude, and the angle between the
     ground-to-platform vector and the lidar surface normal is taken.
 
-    This is deliberately computed against the 3 m lidar DEM. The incidence
-    angle JPL distributes is derived from SRTM at roughly 30 m, which in this
-    terrain smooths away exactly the slope variation the retrieval is most
-    sensitive to.
+    This uses the 3 m lidar DEM. A finer normal stencil does not by itself
+    validate navigation geometry or establish compatible height references.
+
+    Only the declared Left/Right side of that approximate track is retained;
+    wrong-side cells and cells within 1e-7 m of the track are missing. This is
+    a numerical boundary tolerance, not a beam/swath or terrain-occlusion test.
+    Full-track curvature, fixed altitude and vertical-datum limitations remain.
 
     Returns (local_incidence_deg, flat_incidence_deg). The second ignores
     terrain and is the angle from vertical, kept so the terrain contribution
     can be separated from the pure viewing geometry.
     """
     import numpy as np
-    from pyproj import Transformer
+
+    side = look_direction.strip().lower() if isinstance(look_direction, str) else ""
+    if side not in ("left", "right"):
+        raise ValueError("radar_look_direction must be explicitly Left or Right")
 
     h, w = dem.shape
     # cell centres in projected coordinates
@@ -296,11 +363,8 @@ def local_incidence(dem, transform, epsg: int, peg_lat: float, peg_lon: float,
     X = np.broadcast_to(xs[None, :], (h, w))
     Y = np.broadcast_to(ys[:, None], (h, w))
 
-    tf = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
-    px, py = tf.transform(peg_lon, peg_lat)
-
-    # track direction: heading is clockwise from north
-    hdg = math.radians(peg_heading_deg)
+    px, py, grid_heading = projected_peg_track(peg_lat, peg_lon, peg_heading_deg, epsg)
+    hdg = math.radians(grid_heading)
     dx, dy = math.sin(hdg), math.cos(hdg)
 
     vx, vy = X - px, Y - py
@@ -324,6 +388,14 @@ def local_incidence(dem, transform, epsg: int, peg_lat: float, peg_lon: float,
         loc = np.degrees(np.arccos(np.clip(cos_loc, -1.0, 1.0)))
         flat = np.degrees(np.arccos(np.clip(cos_flat, -1.0, 1.0)))
     bad = ~np.isfinite(gz)
+    # Positive cross-track distance is right of the existing projected track.
+    # Look side restricts eligibility; it does not reverse the sight vector.
+    # Reuse these owned displacement arrays to avoid another full float64 grid.
+    cross_track = vx
+    cross_track *= dy
+    vy *= dx
+    cross_track -= vy
+    bad |= cross_track >= -1e-7 if side == "left" else cross_track <= 1e-7
     loc[bad] = np.nan
     flat[bad] = np.nan
     return loc.astype("float32"), flat.astype("float32")
@@ -628,6 +700,9 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
 
     with h5py.File(path, "r") as f:
         ident = f["identification"].attrs
+        parent_lineage = {'file': file_identity(path), 'lineage': read_lineage(ident)}
+        annotation_inputs = []
+        copied_science = set()
         res = float(ident["common_grid_resolution_m"])
         epsg = int(ident["common_crs_epsg"])
         transform = [float(v) for v in ident["common_grid_transform"]]
@@ -672,6 +747,7 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                 if leaf not in ("snow_depth", "elevation", "veg_height",
                                 "swe", "snow_density"):
                     f.copy(f[p], parent, name=leaf)
+                    copied_science.add(p)
                     continue
 
                 a = f[p][...]
@@ -732,6 +808,8 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
             # ---------- terrain derivatives ----------
             # Use the same cleaned base raster stored in this output archive.
             dem = g[dem_path][...]
+            height_reference = dem_vertical_reference(g[dem_path].attrs)
+            g[dem_path].attrs.update(height_reference)
             input_lineage = {
                 "derived_from_archive": "self",
                 "derived_from_stage": "enriched_base_after_cleaning",
@@ -750,11 +828,13 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                 "description": "Terrain slope from the lidar DEM, Horn (1981).",
                 **dem_lineage, "method": "horn_1981_3x3"})
             write_grid(d, "aspect", aspect, chunk, {
-                "units": "degrees clockwise from north",
+                "units": "degrees",
                 "description":
                     "Terrain aspect from the lidar DEM; NaN where flat. This is "
                     "a circular quantity -- encode as sin/cos before modelling.",
-                **dem_lineage, "method": "horn_1981_3x3"})
+                **dem_lineage, "derivation_version": "2.0",
+                "method": "horn_1981_3x3_downhill_grid_bearing",
+                "aspect_convention": "downhill_clockwise_from_grid_north"})
 
             win = max(1, int(round(CANOPY_WINDOW_M / res)))
             window_cells = 2 * (win // 2) + 1
@@ -978,7 +1058,14 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                     log.warning("  %s: annotation unavailable (%s)", dest, exc)
                     continue
                 sc = annotation_scalars(ann)
+                annotation_inputs.append({
+                    'acquisition': dest, 'source_url': url, 'scalars': sc,
+                    'annotation': ann.get('_snowex_annotation_source', {
+                        'identity_method': 'annotation_content_digest_not_recorded'})})
                 if not sc:
+                    grp.attrs["geometry_status"] = "skipped_missing_annotation_fields"
+                    grp.attrs["geometry_note"] = (
+                        "No geometry annotation scalars; radar_look_direction and peg inputs are required")
                     continue
                 stats["annotated"] += 1
                 for k, v in sc.items():
@@ -988,15 +1075,49 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                     "flight's UAVSAR .ann file.")
 
                 need = ("peg_latitude_deg", "peg_longitude_deg",
-                        "peg_heading_deg", "platform_altitude_m")
-                if not all(k in sc for k in need):
+                        "peg_heading_deg", "platform_altitude_m", "radar_look_direction")
+                missing = [k for k in need if k not in sc]
+                if missing:
+                    grp.attrs["geometry_status"] = "skipped_missing_annotation_fields"
+                    grp.attrs["geometry_note"] = "Missing geometry inputs: " + ", ".join(missing)
+                    log.warning("  %s: %s", dest, grp.attrs["geometry_note"])
+                    continue
+                look = sc["radar_look_direction"]
+                if not isinstance(look, str) or look.strip().lower() not in ("left", "right"):
+                    grp.attrs["geometry_status"] = "skipped_invalid_look_direction"
+                    grp.attrs["geometry_note"] = "radar_look_direction must be explicitly Left or Right"
+                    log.warning("  %s: %s", dest, grp.attrs["geometry_note"])
                     continue
                 loc, flat = local_incidence(
                     dem, transform, epsg, sc["peg_latitude_deg"],
                     sc["peg_longitude_deg"], sc["peg_heading_deg"],
-                    sc["platform_altitude_m"],
-                    sc.get("radar_look_direction", "Left"))
+                    sc["platform_altitude_m"], look)
                 geo = grp.require_group("GEOMETRY")
+                grp.attrs["geometry_status"] = "computed_approximate_look_side_restricted"
+                geometry_lineage = {
+                    **dem_lineage,
+                    "derivation_version": "3.0",
+                    "radar_look_direction": look.strip().title(),
+                    "look_side_mask_method": "projected_peg_track_half_plane_v2",
+                    "heading_conversion_method": "wgs84_geodesic_tangent_100m",
+                    "track_heading_grid_deg": projected_peg_track(
+                        sc["peg_latitude_deg"], sc["peg_longitude_deg"], sc["peg_heading_deg"], epsg)[2],
+                    **height_reference,
+                    "vertical_reference_status": "unverified_no_conversion",
+                    "geometry_validation_status": "approximate_not_navigation_validated",
+                    "vertical_reference_note": (
+                        "DEM reference: " + height_reference["dem_vertical_reference"] + ". "
+                        "The aircraft annotation labels its height GPS altitude, without a "
+                        "verified reference realization/epoch here. Height compatibility remains "
+                        "unverified; no vertical shift or datum conversion is applied. "
+                        "These are approximate angles, not validated navigation geometry."),
+                    "look_side_mask_note": (
+                        "Retains only the declared look side of the approximate projected peg track. "
+                        "Opposite-side cells and cells within 1e-7 m of the track are missing "
+                        "in both incidence arrays. This is not a radar-swath or terrain-occlusion mask. "
+                        "Geographic heading is converted to the local grid bearing. "
+                        "Full-track curvature, detailed navigation, squint and vertical-datum reconciliation "
+                        "remain unmodelled.")}
                 finite_incidence = np.isfinite(loc)
                 incidence_valid_count = int(np.count_nonzero(finite_incidence))
                 incidence_ge_90_count = int(np.count_nonzero(finite_incidence & (loc >= 90.0)))
@@ -1013,7 +1134,8 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                     "incidence_ge_90_note": (
                         "Fraction of finite local-incidence cells with angle >= 90 degrees. "
                         "The denominator excludes NaN and infinities; no finite cells "
-                        "gives NaN, not zero. Computed on the native stored angle grid, "
+                        "gives NaN, not zero. Computed after the declared look-side restriction "
+                        "on the native stored angle grid, "
                         "without a radar-swath restriction. This angular condition is "
                         "not a terrain-occlusion test or a radar-shadow measurement."),
                     "description":
@@ -1021,24 +1143,22 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                         "terrain normal -- the theta in the InSAR "
                         "phase-to-depth inversion.",
                     "method": "peg_track_geometry_with_lidar_normals",
-                    **dem_lineage,
+                    **geometry_lineage,
                     "derivation_nodata_note": (
                         "Uses the cleaned DEM. Missing DEM cells are replaced "
                         "by its finite-cell mean only for the normal stencils; "
                         "missing center cells are masked in the output. This "
                         "does not fill or change the stored base DEM."),
                     "improvement_note":
-                        "Computed against the 3 m lidar DEM. The incidence "
-                        "angle JPL distributes is SRTM-derived at about 30 m, "
-                        "which smooths the slope variation this retrieval is "
-                        "most sensitive to."})
+                        "Uses normals from the 3 m lidar DEM. Finer spacing alone "
+                        "does not validate viewing geometry or height-reference compatibility."})
                 write_grid(geo, "incidence_angle_flat", flat, chunk, {
                     "units": "degrees",
                     "description":
                         "Angle from vertical ignoring terrain, so the terrain "
                         "contribution can be separated from viewing geometry.",
                     "method": "peg_track_geometry",
-                    **dem_lineage,
+                    **geometry_lineage,
                     "derivation_nodata_note": (
                         "Ignores terrain slope but uses cleaned DEM elevations "
                         "for the line of sight; missing DEM centers are masked.")})
@@ -1051,7 +1171,7 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                          float(np.nanpercentile(loc, 99)), fraction_label)
 
             gi = g["identification"].attrs
-            gi["enrichment_version"] = "3.1.0"
+            gi["enrichment_version"] = "3.3.0"
             gi["processing_metadata_version"] = "1.0"
             gi["enrichment_note"] = (
                 "Radar is grouped by acquisition (date pair, then flight line) "
@@ -1074,6 +1194,33 @@ def enrich(path, out, cache, session=None, with_insitu=False) -> int:
                 "Projection DEM diagnostics also use its cleaned DEM. "
                 + ("In-situ groups present in the source are carried through."
                    if with_insitu else "In-situ observations are omitted."))
+
+            record = new_record('enrichment', _BUILD_SOURCES, {
+                'scope': 'recomputed science outputs; copied auxiliary science, matches and optional insitu retain original producers',
+                'copied_science_paths': sorted(copied_science),
+                'enrichment_version': gi['enrichment_version'], 'with_insitu': bool(with_insitu),
+                'grid': {'epsg': epsg, 'transform': transform, 'resolution_m': res,
+                         'shape': list(dem.shape), 'chunk_edge_px': chunk},
+                'cleaning': {'snow_noise_floor_m': SD_NOISE_FLOOR,
+                             'plausible_ranges': PLAUSIBLE, 'speckle_min_cells': SPECKLE_MIN_CELLS},
+                'canopy_height_m': CANOPY_HEIGHT_M, 'canopy_window_nominal_m': CANOPY_WINDOW_M,
+                'coherence_min': COHERENCE_MIN, 'dem_path': dem_path,
+                'derivative_input_stage': 'enriched_base_after_cleaning',
+                'aspect_convention': 'downhill_clockwise_from_grid_north',
+                'geometry_heading_method': 'wgs84_geodesic_tangent_100m',
+                'vertical_conversion': 'none; compatibility unverified',
+            }, inputs=annotation_inputs, parent=parent_lineage)
+            store_lineage(gi, record)
+            # A small per-dataset link resolves to the file's full producer
+            # record. Preserve any inherited producer record as input history.
+            for name in _datasets(g):
+                if not name.startswith('science/') or name in copied_science:
+                    continue
+                ds = g[name]
+                store_lineage(ds.attrs, {
+                    'schema': 'snowex-producer-reference-v1',
+                    'artifact_id': record['artifact_id'], 'record_path': '/identification',
+                    'dataset': ds.name, 'input_lineage': read_lineage(ds.attrs)})
 
     log.info("  %s: %.2f GB -> %.2f GB | %d acq, %d masks, %d DEMs dropped",
              path.stem, path.stat().st_size / 2 ** 30,

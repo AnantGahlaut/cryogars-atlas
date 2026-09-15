@@ -28,6 +28,24 @@ test('selected palette reaches actual raster pixels, preserving transparent noda
   E.raster({createElement:()=>canvas},new Float32Array([0,10,NaN]),3,1,0,10,false,{stops:[[0,'#ff0000'],[1,'#0000ff']],reverse:false});
   assert.deepEqual(Array.from(written),[255,0,0,255,0,0,255,255,0,0,0,0]);
 });
+
+test('mask PNG legends contain only the displayed state colours and labels',()=>{
+  const paints=[],texts=[],images=[];
+  const document={createElement(){const context={fillStyle:'',createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),
+    putImageData(im){images.push(Array.from(im.data));},drawImage(){},strokeRect(){},
+    fillRect(x,y,w,h){if(h===12)paints.push(this.fillStyle);},fillText(t){texts.push(t);}};
+    return {getContext:()=>context};}};
+  const result={grid:{w:3,h:1},values:[0,1,NaN],lo:0,hi:1,difference:false,lines:[],title:'Mask A',unit:'state',
+    style:{stops:[[0,'#ff0000'],[.5,'#00ff00'],[1,'#0000ff']]},maskCategory:'binary'};
+  E.figure(document,result);
+  assert.deepEqual([...new Set(paints)],['rgb(255,0,0)','rgb(0,0,255)']);
+  assert.deepEqual(images[0],[255,0,0,255,0,0,255,255,0,0,0,0]);
+  assert.ok(!texts.includes('0.50000'));assert.ok(texts.includes('0.0000'));assert.ok(texts.includes('1.0000 state'));
+  paints.length=0;texts.length=0;
+  E.figure(document,{...result,values:[-1,0,1],lo:-1,maskCategory:'transition',difference:true});
+  assert.deepEqual([...new Set(paints)],['rgb(255,0,0)','rgb(0,255,0)','rgb(0,0,255)']);
+  assert.ok(texts.includes('-1.0000'));assert.ok(texts.includes('0.0000'));assert.ok(texts.includes('1.0000 state'));
+});
 test('coincident colour stops use the existing terrain shader boundary convention',()=>{
   const colour=E.mapper([[0,'#ff0000'],[.5,'#ff0000'],[.5,'#0000ff'],[1,'#0000ff']],false);
   assert.deepEqual(colour(.49),[255,0,0,255]);assert.deepEqual(colour(.5),[255,0,0,255]);

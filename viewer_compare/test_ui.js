@@ -25,7 +25,9 @@ function harness(options={}){
   const layer=(key,lo,hi,bytes)=>({key,label:key,leaf:'snow_depth',kind:'snow_depth',unit:'m',date:'2020-02-01',w:2,h:2,bits:8,lo,hi,b64:Buffer.from(bytes).toString('base64'),cell_m:3});
   const layers=[layer('depth_A',0,2,[1,128,255,0]),layer('depth_B',1,3,[1,128,255,255]),
     {...layer('veg_A',4,8,[1,128,255,0]),leaf:'veg_height',kind:'veg_height'},
-    {...layer('veg_B',5,9,[1,128,255,255]),leaf:'veg_height',kind:'veg_height'}];
+    {...layer('veg_B',5,9,[1,128,255,255]),leaf:'veg_height',kind:'veg_height'},
+    {...layer('mask_A',0,1,[1,128,255,0]),leaf:'coherence_mask',kind:'coherence_mask',unit:'unitless'},
+    {...layer('mask_B',0,1,[128,255,1,255]),leaf:'coherence_mask',kind:'coherence_mask',unit:'unitless'}];
   const payload={site:'example',identification:{site_name:'Example',common_crs_epsg:32612},grid:{origin:[100,200],pixel:[3,-3]},layers,current:'depth_A'};
   const shown=[];
   const paletteChoices=[{id:'diverging',name:'Diverging',stops:[[0,'#b42d1d'],[.5,'#f6f5f0'],[1,'#1d5aa7']]},
@@ -34,9 +36,13 @@ function harness(options={}){
   let appearance=null;
   let selection={key:'depth_A',tab:'depth_A',comparison:null,available:false};
   const selectionListeners=new Set();
+  const maskSettings=new Map(),maskListeners=new Set();
+  const maskOptions=key=>key.startsWith('mask_')?C.maskOptions(maskSettings.get(key)):null;
+  const setMaskOptions=(key,value)=>{const settings=C.maskOptions(value);maskSettings.set(key,settings);for(const fn of maskListeners)fn({key,options:settings});};
   const emitSelection=s=>{selection=s;for(const fn of selectionListeners)fn(s);};
   const navigate=(key,tab=key)=>{if(key)payload.current=key;emitSelection({key,tab,comparison:null,available:selection.available});};
   const api={context:()=>payload,
+    maskOptions,setMaskOptions,onMaskOptions(fn){maskListeners.add(fn);return()=>maskListeners.delete(fn);},
     selection:()=>selection,onSelection(fn){selectionListeners.add(fn);fn(selection);return()=>selectionListeners.delete(fn);},
     clear({restore=true}={}){const key=restore&&selection.comparison!==null?payload.current:selection.key;emitSelection({key,tab:key||selection.tab,comparison:null,available:false});},
     show:r=>{shown.push(r);appearance=null;emitSelection({key:'temporary',tab:'temporary',comparison:r.id,available:true});},
@@ -46,8 +52,73 @@ function harness(options={}){
   const context={document,window:{SnowCompareViewer:api,SnowCompareCore:C,SnowCompareTiff:T,SnowCompareExport:E,GeoTIFF:{fromBlob:options.fromBlob|| (async()=>({getImage:async()=>image}))}},AbortController,console,
     setTimeout:fn=>cleanupTasks.push(fn),URL:{createObjectURL:()=> 'blob:comparison',revokeObjectURL:url=>revoked.push(url)},Float32Array};
   vm.createContext(context);vm.runInContext(fs.readFileSync('viewer_compare/panel.js','utf8'),context);
-  return {el,shown,buttons,terrainButtons,presets,downloads,blobCallbacks,cleanupTasks,revoked,texts,image,rasters,setAppearance:a=>{appearance=a;},navigate,emitSelection,selection:()=>selection};
+  return {el,shown,buttons,terrainButtons,presets,downloads,blobCallbacks,cleanupTasks,revoked,texts,image,rasters,setAppearance:a=>{appearance=a;},navigate,emitSelection,selection:()=>selection,setMaskOptions};
 }
+
+test('mask comparisons default to average fractions, using reference settings for both inputs',async()=>{
+  const h=harness();h.navigate('mask_A');h.setMaskOptions('mask_B',{mode:'binary',cutoff:1});await compareLayers(h);
+  assert.deepEqual(Array.from(h.shown.at(-1).values),[.5,.5,-1,NaN]);
+  assert.equal(h.shown.at(-1).maskKey,'mask_A');assert.equal(h.shown.at(-1).maskBinary,false);
+  assert.match(h.el('nxc-summary').textContent,/RMSE/);assert.doesNotMatch(h.el('nxc-summary').textContent,/lost usable/);
+  await h.buttons[0].fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[0,.5,1,NaN]);
+  await h.el('nxc-export').fire('click');const caption=h.texts.join(' ');
+  assert.match(caption,/Average/);assert.match(caption,/cutoff 0.5/);assert.match(caption,/fraction/);
+  assert.doesNotMatch(caption,/threshold >=0.5/);
+});
+
+test('changing mask mode and cutoff recomputes classes from fractions, fixed limits and statistics',async()=>{
+  const h=harness();h.navigate('mask_A');await compareLayers(h);
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:.5});
+  assert.deepEqual(Array.from(h.shown.at(-1).values),[1,0,-1,NaN]);
+  assert.equal(h.shown.at(-1).maskCategory,'transition');assert.equal(h.shown.at(-1).lo,-1);assert.equal(h.shown.at(-1).hi,1);
+  assert.equal(h.el('nxc-percent-low').disabled,true);assert.equal(h.el('nxc-zero').disabled,true);assert.ok(h.presets.every(p=>p.disabled));
+  assert.match(h.el('nxc-summary').textContent,/gained.*1/);assert.match(h.el('nxc-summary').textContent,/cutoff 0.5/);
+  await h.buttons[0].fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[0,1,1,NaN]);
+  assert.equal(h.shown.at(-1).maskBinary,true);assert.equal(h.shown.at(-1).lo,0);assert.equal(h.shown.at(-1).hi,1);
+  h.setAppearance({lo:20,hi:30,style:{stops:[[0,'#00ff00'],[1,'#ffffff']]},paletteName:'Legend edit',rangeLabel:'Custom value limits'});
+  await h.el('nxc-terrain-style').fire('click');await h.el('nxc-export').fire('click');
+  assert.ok(h.texts.includes('0.0000'));assert.ok(h.texts.includes('1.0000 state'));
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:.75});h.blobCallbacks.at(-1)({});assert.deepEqual(h.downloads,[]);
+  assert.deepEqual(Array.from(h.shown.at(-1).values),[0,0,1,NaN]);
+  assert.equal(h.shown.at(-1).style.stops[0][1],'#00ff00');assert.equal(h.shown.at(-1).lo,0);assert.equal(h.shown.at(-1).hi,1);
+  h.el('nxc-palette').value='saved:mine';await h.el('nxc-palette').fire('change');
+  h.el('nxc-reverse').checked=true;await h.el('nxc-reverse').fire('change');
+  assert.equal(h.shown.at(-1).style.stops[0][1],'#ff0000');assert.equal(h.shown.at(-1).style.reverse,true);
+  assert.equal(h.shown.at(-1).lo,0);assert.equal(h.shown.at(-1).hi,1);
+  await h.buttons[2].fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[0,1,-1,NaN]);
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:0});assert.deepEqual(Array.from(h.shown.at(-1).values),[0,0,0,NaN]);
+  assert.match(h.el('nxc-summary').textContent,/unchanged.*3/);
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:1});
+  assert.deepEqual(Array.from(h.shown.at(-1).values),[0,1,-1,NaN]);
+  h.setMaskOptions('mask_A',{mode:'average',cutoff:.75});
+  assert.deepEqual(Array.from(h.shown.at(-1).values),[.5,.5,-1,NaN]);assert.equal(h.el('nxc-percent-low').disabled,false);
+  await h.buttons[0].fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[0,.5,1,NaN]);
+  assert.equal(h.shown.at(-1).style.stops[0][1],'#ff0000');assert.equal(h.shown.at(-1).style.reverse,true);
+});
+
+test('invalid external mask fractions stay missing in Average and 0–1 comparisons',async()=>{
+  const h=harness({readRasters:async()=>new Float32Array([-.1,.75,1.1,1])});h.navigate('mask_A');
+  await h.el('nxc-open').fire('click',{stopPropagation(){}});
+  h.el('nxc-file').files=[{name:'mask.tif',size:128}];await h.el('nxc-file').fire('change');h.el('nxc-confirm').checked=true;
+  await h.el('nxc-run').fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[NaN,.25,NaN,NaN]);
+  assert.match(h.el('nxc-summary').textContent,/1 shared cells/);
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:0});assert.deepEqual(Array.from(h.shown.at(-1).values),[NaN,0,NaN,NaN]);
+  await h.buttons[1].fire('click');assert.deepEqual(Array.from(h.shown.at(-1).values),[NaN,1,NaN,NaN]);
+});
+
+test('mask setting changes never reread TIFF data or redraw a different layer',async()=>{
+  let reads=0;const h=harness({readRasters:async()=>{reads++;return new Float32Array([0,.75,.25,1]);}});
+  h.navigate('mask_A');await h.el('nxc-open').fire('click',{stopPropagation(){}});
+  h.el('nxc-file').files=[{name:'mask.tif',size:128}];await h.el('nxc-file').fire('change');h.el('nxc-confirm').checked=true;
+  await h.el('nxc-run').fire('click');
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:.8});assert.equal(reads,1);
+  assert.deepEqual(Array.from(h.shown.at(-1).values),[0,0,-1,NaN]);
+  await h.el('nxc-export').fire('click');assert.match(h.texts.join(' '),/cutoff 0.8/);assert.match(h.texts.join(' '),/below cutoff/);
+  const active=h.selection();h.navigate('veg_A');const count=h.shown.length;
+  h.setMaskOptions('mask_A',{mode:'binary',cutoff:0});h.setMaskOptions('mask_B',{mode:'binary',cutoff:1});
+  assert.equal(h.shown.length,count);assert.equal(h.selection().key,'veg_A');assert.equal(reads,1);
+  h.emitSelection(active);assert.deepEqual(Array.from(h.shown.at(-1).values),[0,0,0,NaN]);
+});
 test('open is isolated from legend click; same-product compare, switch views, 3D and clear work',async()=>{
   const {el,shown,buttons}=harness();let stopped=false;
   await el('nxc-open').fire('click',{stopPropagation(){stopped=true;}});

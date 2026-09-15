@@ -25,6 +25,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -35,7 +36,11 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from pathlib import Path
 from processing_metadata import record_processing_history, statistics_attrs
+from processing_metadata import _SOURCE_SNAPSHOT as _PROCESSING_SOURCES
 from typing import Any, Sequence
+from build_provenance import capture_sources, file_identity, json_value, new_record, read_lineage, store_lineage
+
+_BUILD_SOURCES = {**capture_sources(__file__), **_PROCESSING_SOURCES}
 
 log = logging.getLogger("build_hdf5")
 
@@ -436,16 +441,83 @@ DESCRIPTIONS = {
            "surface-change signal between the two acquisition dates.",
     "cor": "Interferometric coherence, 0-1, float32. Per-pixel reliability of "
            "the phase measurement.",
-    "hgt": "Height / elevation-change estimate derived from the interferogram, "
-           "metres, float32.",
+    "hgt": "Ground elevation in the DEM used to project the radar imagery, "
+           "metres, float32. This is the projection DEM, not elevation change.",
     "amp": "Radar backscatter amplitude, float32, linear amplitude units.",
     "amp1": "Radar backscatter amplitude of the first (reference) pass, "
             "float32, linear amplitude units.",
     "amp2": "Radar backscatter amplitude of the second (repeat) pass, "
             "float32, linear amplitude units.",
-    "dem_tiff": "UAVSAR onboard DEM used during processing. A DIFFERENT "
-                "instrument and date from science/LIDAR/DEM.",
+    "dem_tiff": "Projection DEM elevation used during UAVSAR processing, metres. "
+                "A separate archive product from science/LIDAR/DEM.",
 }
+
+
+# Provider product definitions for the direct products reviewed in SNEX-018.
+# These declare metres only; a height unit does not establish a vertical datum.
+LIDAR_QUANTITY_ATTRS = {
+    "DEM": {"quantity": "ground_surface_elevation", "units": "m"},
+    "SD": {"quantity": "snow_depth", "units": "m"},
+    "VH": {"quantity": "vegetation_height", "units": "m"},
+}
+
+
+def uavsar_quantity_attrs(subproduct: str, annotation: dict | None = None) -> dict:
+    """Describe imported values without converting or certifying calibration.
+
+    JPL's repeat-pass format and example annotation define these conventions.
+    Preserve the consumed annotation declaration, and make an unfamiliar one
+    explicitly unknown instead of silently assigning the default unit.
+    """
+    kind = "amp" if subproduct in ("amp1", "amp2") else subproduct
+    kind = "hgt" if kind == "dem_tiff" else kind
+    quantity, units, field, expected = {
+        "amp": ("radar_backscatter_amplitude", "linear amplitude",
+                "amplitude units", "linear amplitude"),
+        "int": ("complex_interferogram", "linear power", "interferogram units",
+                "linear power and phase in radians"),
+        "unw": ("unwrapped_interferometric_phase", "rad",
+                "unwrapped phase units", "radians"),
+        "cor": ("interferometric_coherence", "1", "correlation units",
+                "scalar between 0 and 1"),
+        "hgt": ("projection_dem_elevation", "m", "dem units", "meters"),
+    }[kind]
+    raw = str((annotation or {}).get(field, {}).get("value", "")).strip()
+    supported = not raw or " ".join(raw.lower().split()) == expected
+    attrs = {
+        "quantity": quantity,
+        "units": units if supported else "unknown",
+        "units_status": ("source_annotation" if raw else "provider_documentation_default")
+                        if supported else "unrecognized_source_declaration",
+        "source_units": raw,
+        "source_units_annotation_key": field,
+        "units_reference": "https://uavsar.jpl.nasa.gov/science/documents/rpi-format.html",
+        "units_annotation_reference":
+            "https://uavsar.jpl.nasa.gov/science/documents/example_rpi.ann.txt",
+        "units_note": "Provider product units; no local unit conversion applied.",
+    }
+    if kind in ("amp", "int"):
+        attrs.update(
+            radiometric_reference="not_established",
+            units_note=(f"UAVSAR product-native {units} convention. "
+                        "No SI power unit or sigma0/beta0/gamma0 normalization is asserted. "
+                        "The local importer performs no radiometric calibration or unit conversion."))
+    if kind == "int":
+        attrs.update(magnitude_quantity="interferogram_magnitude",
+                     magnitude_units=units if supported else "unknown",
+                     phase_quantity="wrapped_interferometric_phase",
+                     phase_units="rad" if supported else "unknown",
+                     complex_representation="real and imaginary components; phase is the complex argument")
+    if kind == "cor":
+        attrs["units_note"] = "Dimensionless correlation magnitude, with nominal range 0 to 1."
+    if kind == "hgt":
+        attrs["units_note"] = "Metres of projection DEM elevation; units alone do not establish the vertical datum."
+    if not supported:
+        attrs["units_note"] = ("Unrecognized source unit declaration retained in source_units. "
+                               "Values were not converted; establish the convention before quantitative use.")
+        attrs["description"] = (f"Imported UAVSAR {subproduct}. Source units require review; "
+                                "see source_units and units_status.")
+    return attrs
 
 
 # =====================================================================
@@ -2002,6 +2074,23 @@ def write_array(
     set_attrs(dataset, stats)
     if extra and "cleaning_stage" in extra:
         record_processing_history(dataset.attrs, extra["cleaning_stage"])
+    source_attrs = {"source_dataset": source, "content_key": content_key or "",
+                    **{k: v for k, v in (extra or {}).items()
+                       if k.startswith(("source_", "acquisition_", "annotation_"))}}
+    ancestor = group
+    while ancestor.name != '/':
+        for key, value in ancestor.attrs.items():
+            if key.startswith(("source_", "asf_", "original_product_", "acquisition_", "annotation_")):
+                source_attrs.setdefault(key, json_value(value))
+        ancestor = ancestor.parent
+    store_lineage(dataset.attrs, new_record('builder_array_write', _BUILD_SOURCES,
+        {'dataset_path': dataset.name, 'grid': grid.to_attrs(),
+         'resampling_method': resampling_method, 'overwrite': overwrite,
+         'compression': COMPRESSION, 'compression_level': COMPRESSION_LEVEL,
+         'chunks': list(dataset.chunks), 'shuffle': True,
+         'processing_attributes': {k: v for k, v in (extra or {}).items() if k.startswith('cleaning_')},
+         'input_identity_note': 'Source identifiers are not content hashes unless explicitly recorded.'},
+        inputs=[source_attrs]))
     return dataset
 
 
@@ -2054,7 +2143,15 @@ def write_identification(h5, site: Site, grid: CommonGrid,
         attrs["updated_date"] = now
     attrs["content_key"] = digest
 
+    parent = read_lineage(group.attrs)
     set_attrs(group, attrs)
+    store_lineage(group.attrs, new_record('builder_identification_write', _BUILD_SOURCES,
+        {'metadata': attrs, 'science_lineage': 'per_dataset; skipped historical arrays remain unknown',
+         'match_window_days': MATCH_WINDOW_DAYS, 'resampling': RESAMPLING,
+         'fill_sentinels': FILL_SENTINELS, 'plausible_ranges': PLAUSIBLE_RANGE,
+         'spike_tolerances': SPIKE_TOLERANCE, 'gap_fill_passes': MAX_GAP_PX},
+        inputs=[{'reference_filename': attrs.get('reference_filename', ''),
+                 'site': site.key}], parent=parent))
     return group
 
 
@@ -2233,6 +2330,14 @@ def ingest_points(h5, site: Site, spec: PointSpec, grid: "CommonGrid",
             "without one of these tables has to assume it.",
         "complete": True,
     })
+    store_lineage(grp.attrs, new_record('builder_point_table', _BUILD_SOURCES,
+        {'site': site.key, 'grid': grid.to_attrs(), 'layout': spec.layout,
+         'column_mapping': colmap, 'fill_value': PIT_FILL, 'overwrite': overwrite},
+        inputs=[{'source_url': url, 'source_dataset': spec.short_name,
+                 'sha256': hashlib.sha256(r.content).hexdigest(),
+                 'identity_method': 'sha256_of_consumed_csv_bytes'}]))
+    for dataset in grp.values():
+        dataset.attrs['provenance_artifact_id'] = grp.attrs['artifact_id']
     log.info("    %s: %d point(s) inside the site, %d dropped",
              spec.key, n_in, n_all - n_in)
     return n_in
@@ -2291,6 +2396,11 @@ def write_matches(h5, matches: Sequence[Match], overwrite: bool = False):
         "row_count": len(matches),
         "content_key": digest,
     })
+    store_lineage(group.attrs, new_record('builder_match_table', _BUILD_SOURCES,
+        {'match_window_days': MATCH_WINDOW_DAYS, 'overwrite': overwrite},
+        inputs=[{'match_rows': [asdict(m) for m in matches]}]))
+    for dataset in group.values():
+        dataset.attrs['provenance_artifact_id'] = group.attrs['artifact_id']
     return group
 
 
@@ -2912,6 +3022,8 @@ def ingest_lidar_granule(h5, granule: LidarGranule, grid: CommonGrid,
                  granule.product, granule.date_key)
         return True
 
+    source_identity = (file_identity(local_dir / granule.filename) if local_dir is not None else
+                       {'source_url': granule.url, 'identity_method': 'provider_locator_not_content_hash'})
     with open_lidar_raster(granule, local_dir) as src:
         windowed = read_windowed(src, grid)
         if windowed is None:
@@ -2939,9 +3051,11 @@ def ingest_lidar_granule(h5, granule: LidarGranule, grid: CommonGrid,
         content_key=content_key,
         overwrite=overwrite,
         extra={
+            **LIDAR_QUANTITY_ATTRS.get(granule.product, {}),
             "acquisition_date": granule.date_begin.isoformat(),
             "acquisition_date_end": granule.date_end.isoformat(),
             "source_filename": granule.filename,
+            "source_file_identity_json": json.dumps(source_identity, sort_keys=True),
             "source_url": granule.url,
             "source_native_resolution_m": granule.native_res_m,
             "source_note": granule.note,
@@ -2954,7 +3068,7 @@ def ingest_lidar_granule(h5, granule: LidarGranule, grid: CommonGrid,
 
 
 def build_site_lidar(plan: SitePlan, local_dir: Path | None = None,
-                     overwrite: bool = False, session=None) -> int:
+                     overwrite: bool = False, session=None, run_parameters=None) -> int:
     """Write identification, every LiDAR array, and the match table."""
     import h5py
 
@@ -2966,6 +3080,9 @@ def build_site_lidar(plan: SitePlan, local_dir: Path | None = None,
             overwrite=overwrite,
             extra={
                 "reference_filename": plan.reference_filename,
+                "builder_run_parameters_json": json.dumps(run_parameters or {
+                    'local_dir': str(local_dir) if local_dir is not None else None,
+                    'overwrite': overwrite, 'insitu_enabled': session is not None}, sort_keys=True),
                 "reference_epsg_from_raster": (
                     plan.reference_epsg if plan.reference_epsg is not None else -1
                 ),
@@ -3123,7 +3240,15 @@ def run_build(
     if not inventory_path.exists():
         log.error("no inventory at %s -- run --mode preflight first", inventory_path)
         return 2
-    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    inventory_raw = inventory_path.read_bytes()
+    inventory = json.loads(inventory_raw.decode('utf-8'))
+    run_parameters = {'site_keys': list(site_keys), 'local_dir': str(local_dir) if local_dir is not None else None,
+                      'out_dir': str(out_dir), 'overwrite': overwrite, 'skip_uavsar': skip_uavsar,
+                      'keep_downloads': keep_downloads, 'max_uavsar': max_uavsar,
+                      'work_dir': str(work_dir or Path('work')),
+                      'inventory': {**file_identity(inventory_path),
+                                    'sha256': hashlib.sha256(inventory_raw).hexdigest(),
+                                    'identity_method': 'sha256_of_consumed_inventory_bytes'}}
 
     if local_dir is None:
         try:
@@ -3173,7 +3298,7 @@ def run_build(
         log.info("writing %s", plan.path)
         try:
             written = build_site_lidar(plan, local_dir, overwrite,
-                                       session=lidar_session)
+                                       session=lidar_session, run_parameters=run_parameters)
             log.info("  %d LiDAR array(s) written", written)
         except Exception as exc:  # noqa: BLE001 -- keep going, report at the end
             failed.append(plan.site.key)
@@ -3229,12 +3354,21 @@ def archive_already_ingested(path: Path, level: str, group_name: str,
         return False
 
 
+def _archive_input_attrs(product, path):
+    return {'source_file_identity_json': json.dumps(file_identity(path), sort_keys=True),
+            'source_checksum_status': product.get('source_checksum_status', 'not_verified_in_this_ingest'),
+            'source_md5_catalog': product.get('source_md5_catalog', product.get('md5sum') or ''),
+            'source_md5_verified': product.get('source_md5_verified', ''),
+            'source_md5_observed': product.get('source_md5_observed', ''),
+            'source_md5_mismatch_accepted': product.get('md5_mismatch_accepted', '')}
+
+
 def ingest_uavsar_dem_tiff(h5, product: dict[str, Any], group_name: str,
                            grid: CommonGrid, zip_path: Path,
                            overwrite: bool = False) -> int:
-    """Write the UAVSAR onboard DEM, which ships as a GeoTIFF rather than a
-    `.grd`. This is the terrain model used to geocode the radar -- a different
-    instrument and date from science/LIDAR/DEM."""
+    """Write the projection DEM, which ships as a GeoTIFF rather than a `.grd`.
+    This terrain model geocodes the radar; it is a separate archive product
+    from science/LIDAR/DEM, with its own source metadata."""
     import contextlib
     import tempfile
     import zipfile
@@ -3244,14 +3378,15 @@ def ingest_uavsar_dem_tiff(h5, product: dict[str, Any], group_name: str,
 
     group = h5.require_group(uavsar_group_path("DEM_TIFF", group_name))
     set_attrs(group, {
+        **_archive_input_attrs(product, zip_path),
         "original_product_id": product["scene_name"],
         "asf_file_id": product["file_id"],
         "acquisition_dates": [d for d in (product.get("date_ref"),
                                           product.get("date_sec")) if d],
         "source_url": product["url"],
         "description": (
-            "UAVSAR onboard DEM used during radar processing. A DIFFERENT "
-            "instrument and date from science/LIDAR/DEM."
+            "Projection DEM used during UAVSAR processing. "
+            "A separate archive product from science/LIDAR/DEM."
         ),
     })
 
@@ -3308,6 +3443,7 @@ def ingest_uavsar_dem_tiff(h5, product: dict[str, Any], group_name: str,
                 source="ASF UAVSAR DEM_TIFF", grid=grid,
                 content_key=content_key, overwrite=overwrite,
                 extra={"source_member": member_name,
+                       **uavsar_quantity_attrs("dem_tiff"),
                        **cleaning_attrs(clean_stats, "dem_tiff")})
     set_attrs(group, {
         "ingest_complete": True,
@@ -3495,8 +3631,25 @@ def download_uavsar(product: dict[str, Any], work_dir: Path, session) -> Path:
     expected = int(product.get("bytes_") or 0)
     expected_md5 = product.get("md5sum") or None
 
+    def record_checksum(mismatch=None):
+        product['source_md5_catalog'] = expected_md5 or ''
+        product['source_checksum_status'] = ('verified_md5' if expected_md5 else
+                                              'size_only_not_content_verified')
+        if mismatch:
+            product['source_checksum_status'] = 'zip_crc_passed_catalog_md5_mismatch'
+            product['source_md5_observed'] = mismatch.split()[1]
+            product.pop('source_md5_verified', None)
+        else:
+            product.pop('source_md5_observed', None)
+            product.pop('md5_mismatch_accepted', None)
+            if expected_md5:
+                product['source_md5_verified'] = expected_md5.lower()
+            else:
+                product.pop('source_md5_verified', None)
+
     problem = verify_download(dest, expected, expected_md5)
     if problem is None and dest.exists():
+        record_checksum()
         log.info("    already downloaded (%.2f GB)", dest.stat().st_size / 1e9)
         return dest
     if dest.exists():
@@ -3530,6 +3683,7 @@ def download_uavsar(product: dict[str, Any], work_dir: Path, session) -> Path:
         asf.download_url(url=product["url"], path=str(work_dir),
                          filename=part_name, session=session)
         bad = verify_download(part, expected, expected_md5)
+        accepted_mismatch = None
         if bad and bad.startswith("md5 "):
             # A wrong md5 that reproduces byte-for-byte across independent
             # downloads is not a corrupt transfer -- corruption would differ
@@ -3550,11 +3704,13 @@ def download_uavsar(product: dict[str, Any], work_dir: Path, session) -> Path:
                             "advertised %d bytes. Accepting; recorded in "
                             "provenance.", product["filename"], detail, expected)
                 product["md5_mismatch_accepted"] = bad
+                accepted_mismatch = bad
                 bad = None
             else:
                 log.error("    %s: md5 mismatch AND %s", product["filename"], detail)
         if bad:
             raise RuntimeError(f"{product['filename']}: {bad}")
+        record_checksum(accepted_mismatch)
         import os
 
         os.replace(part, dest)      # atomic on both POSIX and Windows
@@ -3595,7 +3751,9 @@ def ingest_uavsar_archive(h5, product: dict[str, Any], group_name: str,
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            ann = read_annotation(Path(zf.extract(ann_names[0], tmp)))
+            ann_path = Path(zf.extract(ann_names[0], tmp))
+            annotation_sha256 = hashlib.sha256(ann_path.read_bytes()).hexdigest()
+            ann = read_annotation(ann_path)
 
         members: list[tuple[str, str, str]] = []
         for name in names:
@@ -3618,6 +3776,9 @@ def ingest_uavsar_archive(h5, product: dict[str, Any], group_name: str,
 
     group = h5.require_group(uavsar_group_path(level, group_name))
     set_attrs(group, {
+        **_archive_input_attrs(product, zip_path),
+        'source_annotation_filename': ann_names[0],
+        'source_annotation_sha256': annotation_sha256,
         "original_product_id": product["scene_name"],
         "asf_file_id": product["file_id"],
         "processing_level": level,
@@ -3669,6 +3830,7 @@ def ingest_uavsar_archive(h5, product: dict[str, Any], group_name: str,
             content_key=content_key,
             overwrite=overwrite,
             extra={
+                **uavsar_quantity_attrs(sub, ann),
                 "polarization": pol,
                 "source_member": Path(name).name,
                 "native_rows": layout.rows,
@@ -3934,8 +4096,17 @@ def run_clean(site_keys: Sequence[str], out_dir: Path,
         log.info("cleaning %s", path.name)
 
         removed = filled = touched = 0
+        input_identity = file_identity(path)
         try:
             with h5py.File(path, "r") as src, h5py.File(tmp, "w") as dst:
+                parent_lineage = read_lineage(src['identification'].attrs)
+                clean_parameters = {'fill_gaps': fill_gaps, 'fill_sentinels': FILL_SENTINELS,
+                                    'plausible_ranges': PLAUSIBLE_RANGE,
+                                    'spike_tolerances': SPIKE_TOLERANCE,
+                                    'gap_fill_passes': MAX_GAP_PX,
+                                    'compression': COMPRESSION, 'compression_level': COMPRESSION_LEVEL,
+                                    'chunk_edge': CHUNK_EDGE,
+                                    'passthrough': ['matches'], 'scope': 'science arrays only'}
                 for top in ("identification", "matches"):
                     if top in src:
                         src.copy(top, dst)
@@ -3981,6 +4152,11 @@ def run_clean(site_keys: Sequence[str], out_dir: Path,
                                    if cleaned.size else 0.0})
                     set_attrs(ds, statistics_attrs(cleaned, finite_mask, percentiles=True))
                     record_processing_history(ds.attrs, "archive_recleaning", obj.attrs)
+                    store_lineage(ds.attrs, new_record('archive_recleaning_array', _BUILD_SOURCES,
+                        {**clean_parameters, 'kind': kind_of(name), 'dataset_path': ds.name,
+                         'grid_shape': grid_shape},
+                        parent={'file': input_identity, 'dataset_path': obj.name,
+                                'lineage': read_lineage(obj.attrs)}))
                     gone = (stats["sentinels"] + stats["out_of_range"]
                             + stats["spikes"])
                     removed += gone
@@ -3993,6 +4169,8 @@ def run_clean(site_keys: Sequence[str], out_dir: Path,
                 # Recreate the group tree so empty parents survive the copy.
                 set_attrs(dst.require_group("science"), dict(src["science"].attrs))
                 src["science"].visititems(walk)
+                store_lineage(dst['identification'].attrs, new_record('archive_recleaning', _BUILD_SOURCES,
+                    clean_parameters, parent={'file': input_identity, 'lineage': parent_lineage}))
         except Exception as exc:  # noqa: BLE001 -- one site must not stop the rest
             log.error("  %s FAILED (%s: %s); original left untouched",
                       key, type(exc).__name__, exc)

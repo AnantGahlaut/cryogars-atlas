@@ -1,10 +1,11 @@
-<!-- Isolated logo and product notes. No existing widget CSS or app code is changed. -->
+<!-- Isolated logo and product notes. Info gains one footer row; app code is unchanged. -->
 <style id="nxn-style">
   #nxn-logo{position:absolute;right:16px;bottom:18px;width:88px;height:35.2px;overflow:hidden;z-index:4;pointer-events:none;opacity:.65}
   #nxn-logo img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;filter:invert(1);mix-blend-mode:screen}
   body[data-theme="snowfield"] #nxn-logo img{filter:none;mix-blend-mode:multiply}
-  #nxn-trigger{position:absolute;left:calc(100% + 6px);top:8px;width:24px;height:24px;padding:0;display:grid;place-items:center;border:1px solid var(--hair-2);border-radius:50%;background:var(--panel);color:var(--ink-2);font:italic 15px Georgia,serif;cursor:pointer}
-  #nxn-trigger:hover,#nxn-trigger[aria-expanded="true"]{color:var(--live);border-color:var(--live)}
+  #nxn-trigger{width:100%;box-sizing:border-box;min-height:32px;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;border:0;border-top:1px solid var(--hair);border-radius:0 0 4px 4px;background:transparent;color:var(--ink-3);font:11px/1.4 var(--ui);text-align:left;cursor:pointer}
+  #nxn-trigger:hover,#nxn-trigger[aria-expanded="true"]{color:var(--live);background:var(--panel-2)}
+  #nxn-trigger:disabled{opacity:.5;cursor:default}
   #nxn-panel{position:fixed;right:12px;top:52px;bottom:38px;width:380px;max-width:calc(100vw - 24px);z-index:75;display:flex;flex-direction:column;min-height:0;background:var(--panel);color:var(--ink);border:1px solid var(--hair-2);border-radius:4px;box-shadow:0 12px 32px #0004;font-family:var(--ui)}
   #nxn-panel[hidden]{display:none!important;pointer-events:none}
   #nxn-panel header{display:flex;align-items:start;gap:12px;flex:none;padding:18px;border-bottom:1px solid var(--hair)}
@@ -34,7 +35,7 @@
   #nxn-content .nxn-dem-detail p{margin-top:12px;font-size:12px}
 </style>
 <div id="nxn-logo" aria-label="CryoGARS"><img src="data:image/jpeg;base64,__NXN_LOGO__" alt="CryoGARS" width="2681" height="1059"></div>
-<button id="nxn-trigger" type="button" aria-label="Open product notes" aria-controls="nxn-panel" aria-haspopup="dialog" aria-expanded="false" title="Product notes">i</button>
+<button id="nxn-trigger" type="button" aria-label="Product notes &amp; methods" aria-controls="nxn-panel" aria-haspopup="dialog" aria-expanded="false"><span>Product notes &amp; methods</span><span aria-hidden="true">→</span></button>
 <aside id="nxn-panel" role="dialog" aria-modal="false" aria-labelledby="nxn-title" hidden>
   <header><div><p class="nxn-eyebrow">PRODUCT NOTES</p><h2 id="nxn-title">Elevation</h2><p class="nxn-site" id="nxn-site"></p></div><button type="button" id="nxn-close" aria-label="Close product notes">×</button></header>
   <div id="nxn-content"></div>
@@ -66,12 +67,12 @@
       name:'SnowEx HRSI Colorado DEM collection, Version 1',
       catalog:'https://nsidc.org/data/snex_hrsi_sd_dem_co/versions/1',
       guide:'https://nsidc.org/sites/default/files/documents/user-guide/snex_hrsi_sd_dem_co-v001-userguide.pdf',
-      description:'The selected Grand Mesa DTM is the LiDAR-derived snow-off reference terrain in the HRSI collection. It is distinct from the collection’s satellite-stereo snow-on DEMs.'},
+      description:'The selected Grand Mesa DTM is the LiDAR-derived snow-off reference terrain in the HRSI collection.'},
     LiDAR_Veg_Ht_Idaho_1532:{
       name:'LiDAR-derived vegetation and DEM data, Idaho, Version 1',
       catalog:'https://www.earthdata.nasa.gov/data/catalog/ornl-cloud-lidar-veg-ht-idaho-1532-1',
       guide:'https://daac.ornl.gov/VEGETATION/guides/LiDAR_Veg_Ht_Idaho.html',
-      description:'The Reynolds Creek bare-earth LiDAR DEM from the ORNL DAAC Idaho collection, acquired in 2014. Its acquisition predates the SnowEx observations.'}
+      description:'The Reynolds Creek bare-earth LiDAR DEM from the ORNL DAAC Idaho collection, acquired in 2014.'}
   };
   const isGrandMesaDTM=a=>a.source_dataset==='SNEX_HRSI_SD_DEM_CO'&&/GM_DTM_1m/.test(a.source_filename||'');
   const hasGrandMesaProvenanceConflict=a=>isGrandMesaDTM(a)&&/satellite photogrammetry/i.test(a.source_note||'');
@@ -82,15 +83,15 @@
     const hasShape=Array.isArray(data.shape)&&data.shape.length===2&&data.shape.every(Number.isFinite);
     const equation=text=>'<pre class="nxn-equation">'+escape(text)+'</pre>';
     const transition=native===spacing?
-      'Already '+spacing+' m at the source. This site does not undergo 1 m → 3 m downsampling: the source is aligned and cropped to the common archive grid.':
+      'Already '+spacing+' m at the source. The source is aligned and cropped to the common archive grid.':
       (native>0?'The '+native+' m source DEM is resampled onto this site’s '+spacing+' m archive grid.':'The source DEM is resampled onto this site’s '+spacing+' m archive grid; native spacing is not recorded.');
-    let text='<p>This is the terrain elevation reference for '+escape(data.site)+', not snow depth.</p>'+
+    let text='<p>Terrain elevation reference for '+escape(data.site)+'.</p>'+
       '<h3>Original DEM source</h3><p>'+escape(source?source.description:'The source identifiers below are recorded in this export.')+'</p>'+
       '<div class="nxn-source-links">'+(sourceLink(a.source_url,'Original GeoTIFF · Earthdata sign-in')||'<p class="nxn-note">No direct source URL is recorded for this DEM.</p>')+
       (source?sourceLink(source.catalog,source.name)+sourceLink(source.guide,'Provider’s product guide'):'')+'</div>'+
-      (hasGrandMesaProvenanceConflict(a)?'<p class="nxn-note">Provenance correction: the archived note calls this DTM satellite photogrammetry. That conflicts with the provider’s DTM description (Table 2; §2.3). The original note is retained below; the HDF5 has not been edited.</p>':'')+
+       (hasGrandMesaProvenanceConflict(a)?'<p class="nxn-note">Provenance correction: the archived satellite-photogrammetry label conflicts with the provider’s LiDAR DTM description (Table 2; §2.3). The original note is retained below.</p>':'')+
       '<h3>One '+escape(spacing)+' m reference grid</h3><p class="nxn-grid-highlight"><strong>Same row. Same column. Same mapped location.</strong><br>All co-registered science rasters at this site—including snow depth, vegetation and UAVSAR—use this DEM-based grid: the same coordinate system, pixel centres and array shape.</p>'+
-      '<p>That aligns locations, not observation dates or native instrument resolution. Coverage and missing pixels can differ. In-situ observations remain point records; the browser uses coarser display grids.</p>'+
+      '<p>Acquisition dates, native instrument resolution, coverage and missing pixels vary by product. In-situ observations remain point records; the browser uses coarser display grids.</p>'+
       equation('x(r, c) = L + '+spacing+'(c + ½)\ny(r, c) = T − '+spacing+'(r + ½)')+
       '<p class="nxn-note">r and c are zero-based row and column indices. L and T are the upper-left grid edges; x and y are pixel-centre coordinates in metres.</p><dl>'+
       row('This site’s grid origin (L, T)',hasOrigin?data.origin.join(', ')+' m':null)+
@@ -104,73 +105,318 @@
         '<details class="nxn-dem-detail"><summary>Kernel scale, missing data &amp; implementation</summary>'+
         '<p>For axis-aligned grids in the same CRS, α = min(1, source spacing / target spacing). '+
         (native>0?escape('For '+native+' m → '+spacing+' m, α = '+(native===spacing?'1':native===1&&spacing===3?'⅓':String(Math.min(1,native/spacing))))+'. ':'')+
-        'For a 3 m source aligned to the same 3 m pixel centres, this resampling step retains valid source values. Downsampling widens the kernel; it is not always a four-neighbour interpolation.</p>'+
-        (native===1&&spacing===3?'<p>For an interior, coincident centre with valid neighbours, 1 m → 3 m uses one-dimensional weights [1, 2, 3, 2, 1] / 9; the 2D weights are their outer product. This is not a 3 × 3 arithmetic mean. Reprojection can alter the sampling scale.</p>':'')+
+        'For a 3 m source aligned to the same 3 m pixel centres, this step retains valid source values. Downsampling widens the kernel.</p>'+
+        (native===1&&spacing===3?'<p>For an interior, coincident centre with valid neighbours, 1 m → 3 m uses one-dimensional weights [1, 2, 3, 2, 1] / 9; the 2D weights are their outer product. Reprojection can alter the sampling scale.</p>':'')+
         '<p>The equation applies to eligible destination pixels. GDAL leaves a destination nodata when the source cell containing its mapped centre is invalid; other invalid neighbours carry zero weight. A zero denominator also yields nodata.</p>'+
         '<p>Local implementation: <code>build_hdf5.py</code> → <code>ingest_lidar_granule</code> → <code>reproject_array</code>; <code>RESAMPLING["lidar"] = "bilinear"</code>. The grid is cropped to the site’s LiDAR science extent within the reference DEM bounds and snapped outward to the DEM origin by <code>derive_common_grid</code>.</p>'+
         '<div class="nxn-source-links">'+sourceLink('https://rasterio.readthedocs.io/en/stable/api/rasterio.warp.html#rasterio.warp.reproject','Rasterio reproject reference')+
         sourceLink('https://gdal.org/en/stable/programs/gdalwarp.html#nodata-source-validity-mask-handling','GDAL nodata rules')+
         sourceLink('https://github.com/OSGeo/gdal/blob/v3.9.3/alg/gdalwarpkernel.cpp','GDAL bilinear kernel implementation')+'</div>'+
-        '<p>The linked GDAL code documents the kernel; this export does not record the GDAL build used to create the archive.</p></details>';
+        '<p>The linked GDAL code documents the kernel. Consult the archive producer lineage for its GDAL version; older archives may not record it.</p></details>';
     }else{
-      text+='<p class="nxn-note">Recorded resampling: '+escape(a.resampling_method||'not available')+'. A bilinear equation is not assumed for this layer.</p>';
+      text+='<p class="nxn-note">Recorded resampling: '+escape(a.resampling_method||'not available')+'. Calculation details are unavailable for this method.</p>';
     }
-    return text+'<p class="nxn-note">The equation describes the resampling step, not the entire processing chain. Nodata normalization and archive cleaning are separate. Grid spacing is not vertical accuracy; check the source vertical datum before comparing elevations. Display sampling and vertical exaggeration do not change stored heights.</p>';
+    return text+'<p class="nxn-note">Nodata normalization and archive cleaning follow their own rules. Check the source’s vertical accuracy and datum before comparing elevations. Display sampling and vertical exaggeration leave stored heights unchanged.</p>';
   }
   function terrainDerivativeNotes(layer){
     const kind=current.split('/').pop(),a=layer.attrs;
-    if(!/^science\/LIDAR\/DERIVED\/(slope|aspect)$/.test(current)||a.method!=='horn_1981_3x3')return '';
+    if(!/^science\/LIDAR\/DERIVED\/(slope|aspect)$/.test(current)||!['horn_1981_3x3','horn_1981_3x3_downhill_grid_bearing'].includes(a.method))return '';
     const isAspect=kind==='aspect',spacing=escape(data.grid),equation=text=>'<pre class="nxn-equation">'+escape(text)+'</pre>';
+    const downhill=isAspect&&a.aspect_convention==='downhill_clockwise_from_grid_north';
     const input=data.layers[a.derived_from],inputAttrs=input?.attrs||{};
     let text=isAspect?
-      '<p>Aspect describes a terrain surface’s orientation around a full circle. Unlike slope steepness, it wraps: 359° and 0° are only 1° apart.</p>'+
-      '<p class="nxn-grid-highlight"><strong>Direction convention needs review.</strong><br>The current generator’s aspect formula does not match the usual downhill bearing: a surface rising north returns 0°, although its downhill direction is south (180°). Sine/cosine encoding fixes the circular wrap, not this direction mismatch. The bearing convention still needs correction.</p>':
-      '<p>Slope measures how steep the terrain is at '+escape(data.site)+'. It is derived from the site’s '+spacing+' m DEM, in degrees—not percent slope. A flat surface is 0°; a rise of one metre per horizontal metre is 45°.</p>';
+      '<p>Aspect describes a terrain surface’s orientation around a full circle: 359° and 0° are only 1° apart.</p>'+
+      (downhill?'<p class="nxn-grid-highlight"><strong>Downhill grid bearing.</strong><br>0° points toward grid north, 90° east, 180° south and 270° west. A surface rising north faces downhill toward south. Grid north is not necessarily true geographic north.</p>':
+       '<p class="nxn-grid-highlight"><strong>Direction convention needs review.</strong><br>The earlier formula reflects north/south: a surface rising north returns 0° instead of the downhill bearing 180°. This export lacks a corrected-convention record; verify the bearing before encoding it for a model.</p>'):
+      '<p>Slope measures how steep the terrain is at '+escape(data.site)+'. It is derived from the site’s '+spacing+' m DEM and expressed in degrees. A flat surface is 0°; a rise of one metre per horizontal metre is 45°.</p>';
     text+='<h3>Derived from this site’s DEM</h3><dl>'+row('DEM grid',a.derived_from)+row('Original DEM file',inputAttrs.source_filename)+
       row('Grid spacing',data.grid+' m')+row('Coordinate system',data.epsg?'EPSG:'+data.epsg:null)+'</dl>'+
       '<div class="nxn-source-links">'+sourceLink(inputAttrs.source_url,'Original DEM GeoTIFF · Earthdata sign-in')+'</div>';
     text+=a.derived_from_stage==='enriched_base_after_cleaning'&&a.derived_from_archive==='self'?
-      '<p>Recorded input: the cleaned DEM stored in the same enriched archive, after enrichment cleaning. Cleaning rules and the derivative’s own missing-value behavior still affect its result.</p>':
-      '<p>The input processing stage is not established by this layer’s metadata. Earlier enrichment used the input DEM before enrichment cleaning; the shared dataset path alone does not prove that this derivative used the cleaned elevation shown here.</p>';
+      '<p>Recorded input: this archive’s cleaned DEM. Cleaning and derivative missing-value rules affect the result.</p>':
+      '<p>The input processing stage is unrecorded. Earlier enrichment used the DEM before enrichment cleaning.</p>';
     if(isAspect){
       text+='<h3>Using aspect in models &amp; equations</h3>'+
         '<p>For models that do not handle circular inputs directly, encode each valid angle A as <strong>two features</strong>. First convert degrees to radians using π, then take both sine and cosine.</p>'+
         equation('θ = A × π / 180\naspect_sin = sin(θ)\naspect_cos = cos(θ)')+
         equation('A = 359° → (−0.01745, 0.99985)\nA =   0° → ( 0.00000, 1.00000)')+
-        '<p>These pairs are close together, as the directions are. Radians alone still jump from nearly 2π to 0; one sine or cosine alone cannot distinguish every direction. Keep both features. Resolve the direction convention before interpreting them as eastness/northness or using them in physical equations.</p>'+
+        '<p>These pairs are close together, as the directions are. Radians alone still jump from nearly 2π to 0; one sine or cosine alone cannot distinguish every direction. Keep both features. Interpret them using the recorded bearing convention, and update any model features trained on the older reflected convention.</p>'+
         '<p>Flat or missing terrain has undefined aspect. Keep a validity mask and handle missingness explicitly; replacing an undefined angle with 0° would falsely assign north.</p>'+
         '<details class="nxn-dem-detail"><summary>Angular differences &amp; display limitations</summary>'+
         equation('Δθ = atan2(sin(θ₂ − θ₁),\n           cos(θ₂ − θ₁))')+
-        '<p>This gives the signed shortest angular difference in radians. For example, 359° → 0° is +1°, not −359°.</p>'+
+        '<p>This gives the signed shortest angular difference in radians: 359° → 0° is +1°.</p>'+
         (layer.aggregation?.method==='circular_mean_degrees'?
-          '<p>This export uses a circular mean of aspect directions: each finite pixel has equal weight. It averages sine and cosine components, then uses atan2 to recover a bearing in [0°, 360°). Thus 359° and 1° average to north. A block with no finite samples or mean unit-vector length R ≤ '+escape(layer.aggregation.resultant_tolerance)+' is missing. This tolerance detects numerical cancellation; it is not a terrain-dispersion threshold. The mean direction is not necessarily the aspect of an averaged DEM. This export correction does not repair the stored bearing convention.</p>':
-          '<p>This export has no recorded circular-averaging method. Earlier exports averaged real-valued aspect degrees with an ordinary block mean. Around the wrap, averaging 359° and 1° gives 180° instead of north. Use the archive, not the coarser viewer colours, for model inputs; check the bearing convention there first. Circular averaging, when needed, averages sine/cosine components and reconstructs the angle with atan2; a zero resultant has no defined mean direction. Refreshing these notes does not recalculate the exported values.</p>')+'</details>'+
+          '<p>This export uses a circular mean of aspect directions: each finite pixel has equal weight. It averages sine and cosine components, then uses atan2 to recover a bearing in [0°, 360°). Thus 359° and 1° average to north. A block with no finite samples or mean unit-vector length R ≤ '+escape(layer.aggregation.resultant_tolerance)+' is missing. This tolerance detects numerical cancellation; it is not a terrain-dispersion threshold. The mean direction is not necessarily the aspect of an averaged DEM. Stored bearing convention and display aggregation are recorded separately.</p>':
+          '<p>Circular averaging is unrecorded for this export. Earlier ordinary block means place 359° and 1° at 180° instead of north. For model inputs, use archive angles after verifying their bearing convention. To aggregate directions, average sine/cosine components and recover the angle with atan2; a zero resultant has undefined direction. These display values still await recomputation.</p>')+'</details>'+
         '<div class="nxn-source-links">'+sourceLink('https://scikit-learn.org/stable/auto_examples/applications/plot_cyclical_feature_engineering.html#trigonometric-features','Sine/cosine encoding reference')+'</div>';
     }else{
-      text+='<h3>Using slope in models &amp; equations</h3><p>Slope steepness is not a full-circle feature: it does not need the 359°/0° encoding used for aspect. Degrees can be a model input. For equations whose trigonometric functions expect radians, convert first:</p>'+
+      text+='<h3>Using slope in models &amp; equations</h3><p>Degrees can be a model input. For equations whose trigonometric functions expect radians, convert first:</p>'+
         equation('β_rad = β_deg × π / 180\nrise / run = tan(β_rad)\npercent slope = 100 tan(β_rad)');
     }
-    text+='<h3>Calculation in the current pipeline</h3><p>Horn’s 3 × 3 neighbourhood below is arranged with grid north at the top and grid east to the right. Elevations and horizontal spacing s = '+spacing+' m use the same units.</p>'+
+    text+='<h3>Calculation recorded for this layer</h3><p>Horn’s 3 × 3 neighbourhood below is arranged with grid north at the top and grid east to the right. Elevations and horizontal spacing s = '+spacing+' m use the same units.</p>'+
       equation('a  b  c\nd  e  f\ng  h  i')+
       equation('p = [(c + 2f + i) − (a + 2d + g)] / (8s)\nq = [(a + 2b + c) − (g + 2h + i)] / (8s)')+
-      '<p class="nxn-note">p is the elevation gradient toward grid east; q is the gradient toward grid north. These projected grid axes are not a correction to true geographic north.</p>';
+      '<p class="nxn-note">p and q are elevation gradients toward grid east and grid north.</p>';
     if(isAspect){
-      text+=equation('A_current = [90 − atan2(q, −p) × 180/π]\n            mod 360')+
-        '<p>This is the formula currently implemented, not a corrected downhill-aspect formula. The stored metadata calls the result “degrees clockwise from north”; the sign mismatch above was reproduced with a synthetic plane using this function. It is not a pixel-by-pixel audit of the archived aspect arrays.</p>';
+      text+=downhill?equation('A = [atan2(−p, −q) × 180/π] mod 360')+
+        '<p>The downhill vector is (−p, −q). Values rounded to 360° during float32 storage are normalized to 0°.</p>':
+        equation('A_legacy = [90 − atan2(q, −p) × 180/π]\n            mod 360')+
+        '<p>Synthetic planes confirm the north/south reflection in this legacy formula. Archived aspect cells still await verification.</p>';
     }else{
       text+=equation('β_deg = atan(√(p² + q²)) × 180/π');
     }
     return text+'<details class="nxn-dem-detail"><summary>Edges, missing values &amp; traceability</summary>'+
-      '<p>The array boundary is padded by repeating its edge cells. That affects edge derivatives; it is not an extra observation beyond the survey. An invalid centre is masked, and NaN in any of the eight neighbours propagates through the gradient. Slope remains 0 on flat terrain; aspect becomes NaN when √(p² + q²) &lt; 10⁻⁹. Results are stored as float32.</p>'+
-      '<p>Local method: <code>enrich_hdf5.py</code> → <code>slope_aspect(dem, res_m)</code>. The recorded method is <code>horn_1981_3x3</code>. These notes describe that current implementation; they do not rerun enrichment or modify the HDF5.</p>'+
+      '<p>The array boundary is padded by repeating its edge cells, which affects edge derivatives. An invalid centre is masked, and NaN in any of the eight neighbours propagates through the gradient. Slope remains 0 on flat terrain; aspect becomes NaN when √(p² + q²) &lt; 10⁻⁹. Results are stored as float32.</p>'+
+      '<p>Local method: <code>enrich_hdf5.py</code> → <code>slope_aspect(dem, res_m)</code>. Recorded method: <code>'+escape(a.method)+'</code>.</p>'+
       '<div class="nxn-source-links">'+sourceLink('https://gdal.org/en/stable/programs/gdaldem.html#aspect','Standard terrain-aspect convention')+'</div></details>';
   }
+  function reviewedProductNotes(layer){
+    const a=layer.attrs,source=layer.source||current;
+    const leaf=layer.leaf||(current.split('/').pop()==='int ∠phase'?'int ∠phase':source.split('/').pop());
+    const kind=leaf.startsWith('forest_cover_fraction_')?'forest_cover_fraction':
+      leaf==='int ∠phase'?'wrapped_phase':leaf;
+    const titles={veg_height:'Vegetation height',forest_cover_fraction:'Canopy fraction',
+      cor:'Coherence',wrapped_phase:'Wrapped phase',unw:'Unwrapped phase'};
+    if(!titles[kind])return '';
+    const number=v=>typeof v==='number'&&Number.isFinite(v)?v:null;
+    const equation=s=>'<pre class="nxn-equation">'+escape(s)+'</pre>';
+    const survey=attrs=>attrs.acquisition_date?
+      row('Survey dates',attrs.acquisition_date_end&&attrs.acquisition_date_end!==attrs.acquisition_date?
+        [attrs.acquisition_date,attrs.acquisition_date_end]:attrs.acquisition_date):
+      row('Survey dates','Not recorded');
+    let text='<h3>'+titles[kind]+'</h3>';
+    if(kind==='veg_height'){
+      text+='<p>LiDAR-derived vegetation canopy height above ground, describing vertical vegetation structure.</p>'+
+        '<dl>'+survey(a)+row('Height source',a.source_filename)+row('Display units',layer.unit||'Not recorded')+'</dl>'+
+        sourceLink(a.source_url,'Vegetation source file')+
+        '<p>The pipeline imports, aligns and cleans the provider’s height product. A survey from another year serves as a temporal proxy for the radar acquisitions.</p>';
+      if(a.source_dataset==='SNEX20_QSI_VH_3m'){
+        text+='<p>The QSI provider derives vegetation height from surface and bare-earth elevation products. Processing differs by campaign; its 2020 snow-on products omit vegetation buried under snow.</p>'+
+          sourceLink('https://nsidc.org/sites/default/files/documents/user-guide/multi_snex20_qsi_dem_3m-v001-userguide.pdf','QSI Version 1 methods and limitations');
+      }
+    }else if(kind==='forest_cover_fraction'){
+      const threshold=number(a.canopy_height_threshold_m),nominal=number(a.window_m);
+      const cells=number(a.window_cells),grid=number(data.grid),recordedWidth=number(a.window_effective_m);
+      const validCells=cells!==null&&cells>0&&Number.isInteger(cells);
+      const validWidth=recordedWidth!==null&&recordedWidth>0;
+      const width=validWidth?recordedWidth:
+        validCells&&grid!==null&&grid>0?cells*grid:null;
+      const input=data.layers[a.derived_from],inputAttrs=input?.attrs||{};
+      text+='<p>A local canopy-cover proxy: the centered-box calculation divides the count of finite vegetation-height cells at or above the threshold by the count of all finite cells in the window. Values run from 0 to 1; multiply by 100 for percent cover.</p>'+
+        equation('FCF = count(finite V and V ≥ τ) / count(finite V)')+
+        '<dl>'+row('Canopy threshold',threshold!==null?threshold+' m, inclusive (≥)':'Not recorded')+
+        row('Nominal window',nominal!==null&&nominal>0?nominal+' m':'Not recorded')+
+        row('Window cells',validCells?cells+' × '+cells:'Not recorded')+
+        row('Actual window width',width!==null?width+' m'+(!validWidth?' (from recorded cells × archive spacing)':' (recorded)'):'Not recorded')+'</dl>';
+      if(width===null&&nominal===30&&grid===3){
+        text+='<p>Only the nominal window is recorded. The current centered calculation uses 11 × 11 cells (33 m) for a 30 m request on a 3 m grid; this export’s historical footprint remains unverified.</p>';
+      }
+      if(validCells&&grid!==null&&recordedWidth!==null&&Math.abs(cells*grid-recordedWidth)>1e-9){
+        text+='<p>The recorded cell count, grid spacing and effective width disagree. Verify the window metadata before using its stated footprint.</p>';
+      }
+      text+='<p>Raster edges truncate the window. Missing vegetation cells are excluded from the denominator; a missing center can still receive a fraction from valid neighbours. With no finite input cells, the fraction is missing.</p>'+
+        '<h3>Input vegetation survey</h3><dl>'+row('Vegetation dataset',a.derived_from||'Not recorded')+
+        survey(inputAttrs)+row('Vegetation source file',inputAttrs.source_filename)+'</dl>'+
+        sourceLink(inputAttrs.source_url,'Input vegetation source file')+
+        (a.derived_from_stage==='enriched_base_after_cleaning'&&a.derived_from_archive==='self'?
+          '<p>Recorded input: the cleaned vegetation stored in this same enriched archive.</p>':
+          '<p>The input processing stage is unrecorded. Earlier producers used vegetation before enrichment cleaning.</p>');
+    }else{
+      const radar=layer.radar||{};
+      text+='<dl>'+row('Radar acquisition dates',radar.acquisition_dates||radar.acquisition_date_pair||layer.date||'Not recorded')+
+        row('Flight line',radar.flight_line)+row('Polarisation',layer.pol)+
+        row('Interferometry product',radar.source_product_id)+row('Source member',a.source_member)+
+        row('Display units',layer.unit||(kind==='cor'?'dimensionless':'Not recorded'))+'</dl>'+
+        sourceLink(radar.source_url||a.source_url,'Source interferometry product');
+      if(kind==='cor'){
+        text+='<p>Imported interferometric coherence measures radar-signal correspondence for this pair and polarisation on a dimensionless 0–1 scale. Higher values indicate stronger correspondence.</p>'+
+          '<p>The archive aligns and cleans the supplied product. Check the source product for its estimator window and reference; the coherence mask applies the recorded threshold.</p>';
+      }else if(kind==='wrapped_phase'){
+        text+='<p>The angular part of the complex radar interferogram, displayed in radians within one cycle. Values wrap across −π and +π; nearby values on opposite sides of that boundary can represent nearby directions.</p>'+
+          '<p>For each complete display block, the exporter averages the complex samples, then takes the angle. Complex amplitude influences the resulting mean direction.</p>'+
+          equation('Ī = mean of non-NaN complex I in the display block\nφ = atan2(Im(Ī), Re(Ī))')+
+          '<p>A zero complex mean has no physical phase direction; a near-zero mean can make phase unstable through cancellation. The exporter adds no resultant-strength mask for this step, although a numerical angle may still be returned.</p>';
+      }else{
+        text+='<p>Phase in radians, unwrapped upstream and imported from the radar product. Resolving whole cycles has the form:</p>'+
+          equation('φ_unwrapped = φ_wrapped + 2πk, where k is an integer')+
+          '<p>The source processor estimates the integer cycles. Unwrapping errors and missing regions can remain; check its algorithm and phase reference before analysis.</p>';
+        if(a.unw_zero_mask_status==='applied'){
+          text+='<p>Recorded zero-removal rule applied to this layer: remaining finite exact-zero phase cells were set to missing. This is a fill-removal heuristic and may remove true zero phase too.</p>'+
+            '<dl>'+row('Exact-zero cells removed in this pass',number(a.unw_zero_fill_masked)??'Count not recorded')+'</dl>';
+        }else if(typeof a.unw_zero_mask_status==='string'&&a.unw_zero_mask_status.startsWith('skipped_')){
+          text+='<p>The zero-removal step is recorded as skipped for this layer: '+escape(a.unw_zero_mask_status)+'.</p>';
+        }else{
+          text+='<p>Earlier cleaning removed exact-zero phase, potentially including valid zeros. Application to this layer is unrecorded.</p>';
+          if(number(radar.group_unw_zero_fill_masked)!==null){
+            text+='<dl>'+row('Historical polarisation-group zero-removal count',radar.group_unw_zero_fill_masked)+'</dl>'+
+              '<p>This count covers the polarisation group; layer-specific counts are unrecorded.</p>';
+          }
+        }
+        if(a.unw_zero_note)text+='<p>'+escape(a.unw_zero_note)+'</p>';
+      }
+      text+='<dl>'+row('Recorded import resampling',a.resampling_method)+row('Recorded swath-mask status',a.swath_mask_status)+'</dl>'+
+        sourceLink('https://uavsar.jpl.nasa.gov/science/documents/rpi-format.html','JPL repeat-pass product definitions');
+    }
+    text+='<h3>Display and analysis</h3>'+
+      '<p>'+(kind==='wrapped_phase'?'The block phase described above is packed for display.':
+      'Complete display blocks are averaged over non-NaN values, then packed for display; one finite value among otherwise NaN cells can supply a block.')+
+      ' The exported colour grid is '+escape(layer.cell)+' m; the archive grid is '+escape(data.grid)+' m. Hover readouts approximate these coarser display samples.</p>';
+    if(kind!=='wrapped_phase')text+='<p>The updated renderer blends finite terrain-grid samples only, with interpolation weights renormalized after excluding missing values. Primary colours require at least half of the interpolation weight to be valid; overlays require more than half. Older viewers may still mix missing sentinels into scalar colours, pulling them toward the low end of the palette. Use the archive and its validity mask for analysis.</p>';
+    return text;
+  }
+  function approvedAdditionalNotes(layer){
+    const a=layer.attrs,source=layer.source||current,keyLeaf=current.split('/').pop();
+    const leaf=layer.leaf||(keyLeaf==='int |magnitude|'?keyLeaf:source.split('/').pop());
+    if(!['amp1','amp2','int |magnitude|','snow_depth'].includes(leaf))return '';
+    const equation=s=>'<pre class="nxn-equation">'+escape(s)+'</pre>';
+    const recordedNumber=v=>typeof v==='number'&&Number.isFinite(v)?v:'Not recorded';
+    const file=typeof a.source_filename==='string'?a.source_filename:'';
+    let text='';
+    if(leaf==='snow_depth'){
+      const dates=a.acquisition_date?(a.acquisition_date_end&&a.acquisition_date_end!==a.acquisition_date?
+        [a.acquisition_date,a.acquisition_date_end]:a.acquisition_date):'Not recorded';
+      text='<h3>Snow depth</h3><p>LiDAR-derived snow depth. The pipeline aligns and cleans the provider’s depth raster on the common archive grid.</p>'+
+        '<dl>'+row('Survey dates',dates)+row('Depth source',a.source_filename)+
+        row('Display units',layer.unit||'Not recorded')+'</dl>'+sourceLink(a.source_url,'Snow-depth source file');
+      if(a.source_dataset==='SNEX20_QSI_SD_3m'&&/^SNEX20_QSI_SD_3M_[A-Z0-9]+_\d{8}_\d{8}\.tif$/i.test(file)){
+        text+='<p>QSI subtracts a snow-free elevation grid from a snow-covered grid. The provider resamples its 0.5 m grids to the distributed 3 m product using nearest neighbour; local archive alignment uses bilinear resampling. Snow-depth error for this 3 m product was not assessed by the provider.</p>'+
+          sourceLink('https://nsidc.org/sites/default/files/documents/user-guide/multi_snex20_qsi_dem_3m-v001-userguide.pdf','QSI Version 1 methods and limitations');
+      }else if(a.source_dataset==='ASO_3M_SD'&&/^ASO_3M_SD_[A-Z0-9]+_\d{8}\.tif$/i.test(file)){
+        text+='<p>ASO subtracts snow-free gridded surface elevations from snow-covered elevations and distributes snow depth on a 3 m grid in metres. Provider classification, masking and void handling precede local alignment and cleaning. The exact snow-free reference file is not established in this layer’s metadata.</p>';
+        if(/^ASO_3M_SD_USCOGM_201702(08|16|20|21|25)\.tif$/.test(file)){
+          text+='<p>The provider withdrew incorrectly geolocated Grand Mesa quality-flag files for this 2017 survey. A usable quality-flag layer must not be assumed to accompany this export.</p>';
+        }
+        text+=sourceLink('https://nsidc.org/sites/default/files/aso_3m_sd-v001-userguide_1.pdf','ASO Version 1 methods and quality flags');
+      }else if(a.source_dataset==='SNEX20_GM_Lidar'&&file==='SNEX20_GM_Lidar_SD_20200201_20200202_v01.0.tif'){
+        text+='<p>This Grand Mesa product uses M3C2: snow-covered and snow-free point clouds are compared along fitted local surface normals before rasterization.</p>'+
+          '<p>The provider documents a 1 m product. The native spacing below comes from archive metadata.'+
+          (a.source_native_resolution_m===3?' Its 3 m value conflicts with the provider’s 1 m description; the original source header still needs verification.':'')+'</p>'+
+          '<p>The exact source filename spans 2020-02-01 through 2020-02-02.'+
+          (a.acquisition_date_end&&a.acquisition_date_end!=='2020-02-02'?' Its recorded end date '+escape(a.acquisition_date_end)+' disagrees with that filename.':'')+
+          '</p>'+
+          sourceLink('https://nsidc.org/data/snex20_gm_lidar/versions/1','Grand Mesa provider collection')+
+          sourceLink('https://tc.copernicus.org/articles/18/3253/2024/','Grand Mesa M3C2 methods');
+      }else{
+        text+='<p>The provider-specific calculation and original reference surface are not established by this layer’s collection and filename.</p>';
+      }
+      text+='<h3>Zeros, missing values and cleaning</h3><p>A finite zero is a retained estimate; missing cells have no retained estimate. Zeros may be source values or clipped negatives; some gaps may have been interpolated.</p>'+
+        '<p>The current enrichment recipe clips finite values in [−0.25, 0) m to zero and marks values below −0.25 m or above 15 m as missing. It removes finite components smaller than 100 cells only when multiple four-connected components exist.</p>'+
+        '<dl>'+row('Recorded negative-to-zero events',recordedNumber(a.negatives_clipped_to_zero))+
+        row('Recorded negative-to-missing events',recordedNumber(a.negatives_set_to_nodata))+
+        row('Recorded range-removal events',recordedNumber(a.out_of_range_set_to_nodata))+
+        row('Recorded component-removal cells',recordedNumber(a.speckle_cells_removed))+
+        row('Recorded range',a.plausible_range)+'</dl>'+
+        '<p>These historical processing counts may overlap. Missing counts are unrecorded; per-pixel interpolation history is unavailable.</p>'+
+        '<p>Snow depth colours the DEM while terrain heights stay unchanged. Account for survey timing and changing snow conditions when comparing with radar acquisitions.</p>';
+    }else{
+      const radar=layer.radar||{},magnitude=leaf==='int |magnitude|',pass=leaf==='amp1'?1:2;
+      const dates=radar.acquisition_dates,selectedDate=Array.isArray(dates)&&dates.length===2?dates[pass-1]:null;
+      const passDate=typeof selectedDate==='string'&&selectedDate.trim()?selectedDate:'Not recorded';
+      text='<h3>'+(magnitude?'Interferogram magnitude':'Amplitude '+pass)+'</h3><dl>'+
+        (magnitude?row('Radar acquisition dates',dates||radar.acquisition_date_pair||'Not recorded'):
+          row('Pass '+pass+' acquisition date',passDate))+
+        row('Flight line',radar.flight_line)+row('Polarisation',layer.pol)+
+        row(magnitude?'Interferometry product':'Amplitude source product',radar.source_product_id)+
+        row('Source member',a.source_member)+row('Display unit label',layer.unit||'Not recorded')+'</dl>'+
+        sourceLink(radar.source_url,magnitude?'Source interferometry product':'Source amplitude product');
+      if(magnitude){
+        text+='<p>Magnitude is the strength of the two-pass complex radar cross-product.</p>'+
+          equation('m = |I| = √(Re(I)² + Im(I)²)\nDisplay value = mean of non-NaN pixel magnitudes')+
+          '<p>The exporter takes each pixel’s magnitude before averaging: mean(abs(I)), not abs(mean(I)). Opposing complex directions can cancel in the complex mean while retaining large individual magnitudes.</p>';
+        if(a.source_dataset==='ASF UAVSAR INTERFEROMETRY_GRD')text+='<p>The JPL product definition and source annotations specify linear power for magnitude, with phase in radians. Calibration and terrain-normalization conventions remain unverified where unrecorded.</p>';
+        else text+='<p>The physical units of this unidentified interferogram source are not established here.</p>';
+      }else{
+        text+='<p>Radar-return amplitude from the source’s annotated pass '+pass+', a separate observation. The pipeline imports, aligns, cleans and masks the supplied amplitude on the provider’s value scale.</p>'+
+          equation('Display amplitude = mean of non-NaN A'+pass+' in the block');
+        if(a.source_dataset==='ASF UAVSAR AMPLITUDE_GRD')text+='<p>The JPL product definition and source annotations specify linear amplitude units. The calibration convention is unverified where unrecorded.</p>';
+        else text+='<p>Physical amplitude units are not established from this source identity.</p>';
+      }
+      text+='<p>Finite display-block values are clipped to the 2nd and 98th percentiles before packing, falling back to min/max when those limits coincide. Later palette changes cannot recover clipped extremes.</p>'+
+        '<p>Each layer has an independent linear colour scale (no dB conversion). Equal brightness can represent different values; compare numeric scales, source dates and valid footprints.</p>'+
+        '<dl>'+row('Recorded import resampling',a.resampling_method)+row('Recorded swath-mask status',a.swath_mask_status)+'</dl>'+
+        sourceLink('https://uavsar.jpl.nasa.gov/science/documents/rpi-format.html','JPL repeat-pass product definitions');
+    }
+    return text+'<h3>Display and analysis</h3><p>Incomplete bottom/right display blocks are dropped. Means use non-NaN values with no minimum coverage fraction; all-missing blocks remain missing. Finite results are packed into 8 bits; hover readouts are approximate.</p>'+
+      '<dl>'+row('Exported colour grid',layer.cell!=null?layer.cell+' m':'Not recorded')+
+      row('Archive grid',data.grid!=null?data.grid+' m':'Not recorded')+'</dl>'+
+      '<p>The updated renderer blends finite terrain-grid samples only, with interpolation weights renormalized after excluding missing values. Primary colours require at least half of the interpolation weight to be valid; overlays require more than half. Older viewers may still mix missing sentinels into scalar colours, pulling them toward the low end of the palette. Use the archive and its validity mask for analysis.</p>';
+  }
+  function maskNotes(layer){
+    const source=layer.source||current,leaf=layer.leaf||source.split('/').pop();
+    if(leaf!=='coherence_mask')return '';
+    const a=layer.attrs,radar=layer.radar||{},threshold=a.coherence_threshold;
+    const input=layer.coherence&&layer.coherence.source===a.derived_from?layer.coherence.attrs||{}:{};
+    const recorded=typeof threshold==='number'&&Number.isFinite(threshold)&&threshold>=0&&threshold<=1;
+    return '<h3>Coherence mask</h3><p>The fraction of valid cells in a display block that passed the recorded coherence test. For example, 0.75 means 75% passed.</p>'+
+      '<dl>'+row('Archive coherence threshold',recorded?threshold:'Not recorded')+
+      row('Input coherence dataset',a.derived_from||'Not recorded')+
+      row('Coherence source member',input.source_member)+
+      row('Radar acquisition dates',radar.acquisition_dates||radar.acquisition_date_pair||'Not recorded')+
+      row('Flight line',radar.flight_line)+row('Polarisation',layer.pol)+
+      row('Interferometry product',radar.source_product_id)+'</dl>'+
+      sourceLink(radar.source_url,'Source coherence product')+
+      '<p>Each archive cell stores 1 when cleaned coherence meets or exceeds '+(recorded?escape(threshold):'its threshold (unrecorded here)')+
+      ', 0 below it, and 255 for missing data. Valid 0/1 cells are averaged within each display block; missing cells are excluded and an entirely missing block stays blank.</p>'+
+      '<h3>Average / 0–1 preview</h3><p>Average is the default view. The 0–1 view returns 1 when the decoded block fraction meets or exceeds the adjustable cutoff, and 0 below it. The cutoff ranges from 0 to 1 and starts at 0.50; missing blocks stay blank. This cutoff applies to the passing fraction, while the archive threshold above applies to coherence.</p>'+
+      '<p>Hover values approximate the packed display samples. Classification uses the decoded value before the hover text is rounded. At cutoff 0 every valid block passes; at cutoff 1 only a decoded fraction of exactly 1 passes.</p>'+
+      '<details class="nxn-dem-detail"><summary>Cleaning, sampling and packing</summary>'+
+      '<p>The current producer screens coherence to its valid range and applies the shared radar mask from available finite, nonzero amplitude/coherence inputs before thresholding. Exact-zero input coherence therefore becomes missing. The threshold calculation uses coherence alone.</p>'+
+      '<dl>'+row('Input coherence swath-mask status',input.swath_mask_status)+
+      row('Input processing stage',a.derived_from_stage||'Not recorded')+
+      row('Input archive scope',a.derived_from_archive||'Not recorded')+'</dl>'+
+      '<p>Input processing is unverified where its stage is unrecorded.</p>'+
+      '<p>Incomplete bottom/right blocks are dropped. A block can be supplied by one valid cell; there is no minimum coverage fraction. The '+escape(layer.cell)+' m display grid is coarser than the '+escape(data.grid)+' m archive grid.</p>'+
+      '<p>Display packing uses the finite block minimum and maximum. Byte 0 represents a missing display sample; bytes 1–255 represent finite values, so display byte 255 differs from archive nodata 255.</p>'+
+      '<pre class="nxn-equation">'+escape('f = passing cells / valid cells\nspan = hi − lo if positive, otherwise 1\nq = 1 + round(254 × clip((f − lo) / span, 0, 1))\nf̂ = lo + (q − 1) × (hi − lo) / 254')+'</pre>'+
+      '<p>The browser casts decoded fractions to float32. Averaging and packing discard the individual archive-cell pattern; use the archive mask for that detail.</p></details>';
+  }
   function incidenceNotes(layer){
-    if(!current.endsWith('/local_incidence_angle'))return '';
-    const a=layer.attrs,fraction=a.incidence_ge_90_fraction;
+    const source=layer.source||current,leaf=layer.leaf||source.split('/').pop(),isLocal=leaf==='local_incidence_angle';
+    if(!isLocal&&leaf!=='incidence_angle_flat')return '';
+    const a=layer.attrs,radar=layer.radar||{},fraction=a.incidence_ge_90_fraction;
+    const input=data.layers[a.derived_from]?.attrs||{};
+    const scalar=(v,unit)=>typeof v==='number'&&Number.isFinite(v)?v+unit:'Not recorded';
+    let definition='<h3>'+(isLocal?'Local incidence':'Flat incidence')+'</h3><p>'+(isLocal?
+      'The angle between the ground-to-aircraft viewing direction and the upward local terrain normal, in degrees. It combines approximate viewing geometry with DEM slope.':
+      'The angle between the ground-to-aircraft viewing direction and vertical, in degrees. Terrain slope is ignored, while DEM elevation still sets the aircraft-to-ground height difference.')+
+      ' An angle of 0° aligns with that reference; 90° is perpendicular.</p>'+
+      '<dl>'+row('Radar acquisition dates',radar.acquisition_dates||radar.acquisition_date_pair||'Not recorded')+
+      row('Flight line',radar.flight_line)+row('Recorded acquisition package',radar.source_product_id)+
+      row('DEM dataset',a.derived_from||'Not recorded')+row('DEM source file',input.source_filename)+'</dl>'+
+      sourceLink(radar.source_url,'Recorded acquisition source')+sourceLink(input.source_url,'Input terrain DEM');
+    if(a.method===(isLocal?'peg_track_geometry_with_lidar_normals':'peg_track_geometry')){
+      definition+='<details class="nxn-dem-detail"><summary>Recorded geometry calculation</summary>'+
+        '<p>The aircraft is approximated by a straight track through the annotation peg at one reported altitude. For each ground cell, the nearest point on that track defines the aircraft position above it.</p>'+
+        '<pre class="nxn-equation">'+escape('l = (aircraft − ground) / |aircraft − ground|\n'+(isLocal?
+          'n = (−p, −q, 1) / √(1 + p² + q²)\nθlocal = acos(clip(l · n, −1, 1)) × 180/π':
+          'θflat = acos(clip(lup, −1, 1)) × 180/π'))+'</pre>'+
+        (isLocal?'<p>p and q are Horn 3 × 3 DEM gradients toward grid east and north; n is the upward unit normal. Missing DEM neighbours use the finite DEM mean for the normal stencil, and missing centres remain missing. Flat terrain gives the same flat and local angle.</p>':'<p>lup is the upward component of the unit viewing vector. Missing DEM centres remain missing.</p>')+
+        '<dl>'+row('Annotated peg latitude',scalar(radar.peg_latitude_deg,'°'))+
+        row('Annotated peg longitude',scalar(radar.peg_longitude_deg,'°'))+
+        row('Annotated peg heading',scalar(radar.peg_heading_deg,'°'))+
+        row('Annotated platform altitude',scalar(radar.platform_altitude_m,' m'))+
+        row('Annotated look direction',radar.radar_look_direction||'Not recorded')+'</dl>'+
+        '<p>The historical annotation-file identity may be unrecorded.</p></details>';
+    }else{
+      definition+='<dl>'+row('Annotated peg heading',scalar(radar.peg_heading_deg,'°'))+
+        row('Annotated platform altitude',scalar(radar.platform_altitude_m,' m'))+
+        row('Annotated look direction',radar.radar_look_direction||'Not recorded')+'</dl>'+
+        '<p>The exact calculation is unestablished for this recorded method.</p>';
+    }
+    definition+='<p>Complete display blocks average valid stored angles and pack the result into 8 bits. The '+escape(layer.cell)+' m colour grid and hover readouts approximate the '+escape(data.grid)+' m archive angles; entirely missing blocks stay blank.</p>';
+    const restricted=['projected_peg_track_half_plane_v1','projected_peg_track_half_plane_v2'].includes(a.look_side_mask_method);
+    const geometry=definition+'<h3>Approximate viewing geometry</h3>'+(restricted?
+      '<p>Restricted to the recorded '+escape(a.radar_look_direction)+' look side of the approximate peg track. Wrong-side cells and cells within 10⁻⁷ m of the track are missing in both incidence layers.</p>':
+      '<p>No look-side restriction is recorded in this export. Earlier producer versions accepted the look-direction label without using it; their finite angles can extend to the opposite side of the track.</p>')+
+      (a.heading_conversion_method==='wgs84_geodesic_tangent_100m'?
+        '<p>Geographic heading is converted to the local map-grid bearing using a projected WGS84 geodesic tangent, accounting for local grid convergence.</p>':
+        '<p>No heading conversion is recorded. Earlier geometry used heading directly on projected map axes without correcting grid convergence.</p>')+
+      '<p>Full-track curvature, detailed navigation, squint, swath boundaries and terrain occlusion are not modeled; height-reference compatibility remains unverified.</p>'+
+      (a.vertical_reference_note?'<p>'+escape(a.vertical_reference_note)+'</p>':'');
+    if(!isLocal)return geometry;
     let summary;
     if(a.incidence_ge_90_status==='no_valid_incidence'){
-      summary='<p>Unavailable: no finite incidence cells. This is not a zero-percent result.</p>';
+      summary='<p>Percentage unavailable: no finite incidence cells.</p>';
     }else if(a.incidence_ge_90_status==='computed'&&typeof fraction==='number'&&Number.isFinite(fraction)){
       summary='<dl>'+row('Share of finite incidence cells',(100*fraction).toFixed(2)+'%')+
         row('Cells with incidence ≥ 90°',a.incidence_ge_90_cell_count)+row('Finite incidence cells',a.incidence_valid_cell_count)+'</dl>';
@@ -178,33 +424,36 @@
       summary='<p>The finite-cell percentage is unavailable in this metadata.</p>';
     }else if(typeof a.radar_shadow_fraction==='number'&&Number.isFinite(a.radar_shadow_fraction)){
       summary='<dl>'+row('Legacy share of whole grid',(100*a.radar_shadow_fraction).toFixed(2)+'%')+'</dl>'+
-        '<p>The historical denominator includes missing cells. This is not the corrected finite-cell percentage.</p>';
+        '<p>The historical denominator includes missing cells.</p>';
     }else{
       summary='<p>No incidence-threshold percentage is recorded in this export.</p>';
     }
-    return '<h3>Incidence ≥ 90°</h3>'+summary+
-      '<p>This angle condition does not test whether other terrain blocks the radar. It is not a radar-shadow measurement. Finite geometry cells can extend outside the radar swath; this percentage is not observed radar coverage.</p>';
+    return geometry+'<h3>Incidence ≥ 90°</h3>'+summary+
+      (restricted?'<p>The finite-cell denominator is measured after the look-side restriction.</p>':'')+
+      '<p>This is a geometry statistic. Radar-shadow and coverage estimates additionally require terrain-blocking and swath tests.</p>';
   }
   function render(){
     const layer=data.layers[current];if(!layer)return;
     const a=layer.attrs,isElevation=current===data.dem;
     el('nxn-title').textContent=isElevation?'Elevation':layer.label;
     el('nxn-site').textContent=data.site+(layer.date?' · '+layer.date:'');
-    const intro=isElevation?demNotes(a):terrainDerivativeNotes(layer)||
+    const intro=isElevation?demNotes(a):terrainDerivativeNotes(layer)||reviewedProductNotes(layer)||approvedAdditionalNotes(layer)||maskNotes(layer)||incidenceNotes(layer)||
       '<p>For this first preview, this layer shows recorded metadata only. We can add its explanation and calculation after reviewing the product together.</p>';
     const survey=a.acquisition_date_end&&a.acquisition_date_end!==a.acquisition_date?
       [a.acquisition_date,a.acquisition_date_end]:a.acquisition_date;
-    el('nxn-content').innerHTML=intro+incidenceNotes(layer)+'<h3>Recorded for this layer</h3><dl>'+
+    el('nxn-content').innerHTML=intro+'<h3>Recorded for this layer</h3><dl>'+
       row('Source dataset',a.source_dataset)+row('Source file',a.source_filename)+
       row(isElevation?'Recorded acquisition date':'Source survey',survey)+row('Source units',a.units)+
       row('Source native spacing',a.source_native_resolution_m!=null?a.source_native_resolution_m+' m':null)+
       row('Common archive grid',data.grid+' m')+row('Exported colour grid',layer.cell+' m')+
       row('Coordinate system',data.epsg?'EPSG:'+data.epsg:null)+row('Resampling',a.resampling_method)+
+      row('DEM height reference',a.dem_vertical_reference)+row('Height-reference evidence',a.dem_vertical_reference_status)+
+      row('Geometry validation',a.geometry_validation_status)+
       row('Derived from',a.derived_from)+row('Input processing stage',a.derived_from_stage)+row('Input archive scope',a.derived_from_archive)+
       row('Derivation version',a.derivation_version)+row('Derivative missing-value rule',a.derivation_nodata_note)+
       row('Recorded method',a.method)+row(isElevation&&hasGrandMesaProvenanceConflict(a)?'Archived note (conflicts with provider’s DTM guide)':'Source note',a.source_note)+
       row('Previous source note',a.source_note_previous)+row('Source-note correction',a.source_note_correction)+row('HDF5 path',current)+'</dl>'+
-      '<p class="nxn-note">Metadata is copied from this existing export. This panel does not independently validate the source values.</p>';
+      '<p class="nxn-note">Metadata copied from this export.</p>';
   }
   function close(restoreFocus=true){
     panel.hidden=true;trigger.setAttribute('aria-expanded','false');
@@ -214,7 +463,7 @@
     const next=pathNode.textContent.trim();
     if(data.layers[next])current=next;
     trigger.disabled=!data.layers[current];
-    trigger.setAttribute('aria-label','Open product notes for '+(data.layers[current]?.label||'this layer'));
+    trigger.setAttribute('aria-label','Product notes & methods for '+(data.layers[current]?.label||'this layer'));
     if(!panel.hidden)render();
   }
   trigger.addEventListener('click',event=>{

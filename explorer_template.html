@@ -677,16 +677,16 @@
       </div>
       <div class="ib"><table class="kv" id="iBody"></table>
         <div id="metricHelp">
-          <p><b>valid</b> &mdash; cells holding a real measurement, as a share
-             of the whole stored rectangle. The grid is a rectangle; flight
-             footprints are not, so even a flawless layer sits well below 100%.
-             The empty part is outside the survey, not missing data.</p>
-          <p><b>coverage</b> &mdash; the same cells measured against
-             <i>this site's own footprint</i>, meaning wherever the base DEM has
-             data. The base DEM is therefore <code>100%</code> by definition.
-             Above 100% means the layer reaches beyond the lidar footprint,
-             which is normal for radar: the UAVSAR swath is wider than the
-             lidar survey.</p>
+          <p><b>valid</b> &mdash; cells with a finite value after recorded
+             processing, as a share of the whole stored rectangle. Values may
+             be measured, derived or interpolated. Missing cells can lie outside
+             survey coverage or within it, including filtered cells.</p>
+          <p><b>valid-cell count relative to DEM</b> &mdash; the layer's finite-cell
+             count divided by the base DEM's finite-cell count on the common
+             archive grid. The base DEM is <code>100%</code> by definition.
+             Above 100% means more finite cells than the DEM. This count ratio
+             does not measure spatial overlap: even disjoint sets of cells can
+             have the same count.</p>
           <p class="sep">Neither number is a quality measure. For
              interferometric phase, candidate screens include
              <code>cor &ge; 0.30</code> and <code>local_incidence &lt; 90&deg;</code>.
@@ -742,7 +742,7 @@
       <div class="ln" id="legName">&mdash;</div>
       <div id="ramp"></div>
       <div id="ticks"><span id="t0"></span><span id="t1"></span><span id="t2"></span></div>
-      <div id="rangeState"><i></i><span id="rangeStateLabel">Full range · 100% of values</span></div>
+      <div id="rangeState"><i></i><span id="rangeStateLabel">Colour stretch · full packed range</span></div>
       <div class="legend-action"><span>Palette &amp; contrast</span></div>
     </div>
 
@@ -770,12 +770,12 @@
           </div>
           <div class="le-custom-note" id="leCustomNote">Scientific defaults are locked. Custom work is always a separate copy.</div>
         </div>
-        <div class="le-field"><label>Displayed value range</label>
+        <div class="le-field"><label>Colour stretch limits</label>
           <div class="le-range"><label>Minimum<input id="leMin" type="number" step="any"></label>
             <label>Maximum<input id="leMax" type="number" step="any"></label></div></div>
-        <div class="le-presets"><button data-stretch="full">Full range</button>
-          <button data-stretch="robust">Robust 2–98%</button>
-          <button data-stretch="detail">Detail 10–90%</button></div>
+        <div class="le-presets"><button data-stretch="full">Full packed range</button>
+          <button data-stretch="robust">Robust P2–P98</button>
+          <button data-stretch="detail">Detail P10–P90</button></div>
         <div class="le-foot"><label><input id="leReverse" type="checkbox"> Reverse palette</label>
           <button class="set-btn" id="leReset">Reset layer</button></div>
       </div>
@@ -931,21 +931,28 @@ function decodeAt(L){
 /* Colour layers are stored coarser than the mesh -- the terrain is one array
    and can afford detail, 300 data layers cannot. Nearest-neighbour lifts each
    onto the render grid on demand. */
-function lift(src,lw,lh){
-  if(lw===W&&lh===H)return src;
-  const out=new Float32Array(W*H);
+function lift(src,L){
+  const lw=L.w,lh=L.h,origin=L.origin||G.origin;
+  const pixel=L.pixel||G.pixel.map(v=>v*L.cell_m/G.cell_m);
+  if(lw===W&&lh===H&&origin[0]===G.origin[0]&&origin[1]===G.origin[1]&&
+     pixel[0]===G.pixel[0]&&pixel[1]===G.pixel[1])return src;
+  const out=new Float32Array(W*H).fill(NaN);
   const mi=new Int32Array(W), mj=new Int32Array(H);
-  for(let i=0;i<W;i++)mi[i]=Math.min(lw-1,(i*lw/W)|0);
-  for(let j=0;j<H;j++)mj[j]=Math.min(lh-1,(j*lh/H)|0);
-  for(let j=0;j<H;j++){const s=mj[j]*lw,d=j*W;
-    for(let i=0;i<W;i++)out[d+i]=src[s+mi[i]];}
+  // Export origins are block edges; sample at terrain cell centers. Independent
+  // stride cropping removes edge strips, which must not stretch the retained cells.
+  for(let i=0;i<W;i++)mi[i]=Math.floor((G.origin[0]-origin[0]+(i+.5)*G.pixel[0])/pixel[0]);
+  for(let j=0;j<H;j++)mj[j]=Math.floor((G.origin[1]-origin[1]+(j+.5)*G.pixel[1])/pixel[1]);
+  for(let j=0;j<H;j++){
+    if(mj[j]<0||mj[j]>=lh)continue;
+    const s=mj[j]*lw,d=j*W;
+    for(let i=0;i<W;i++)if(mi[i]>=0&&mi[i]<lw)out[d+i]=src[s+mi[i]];}
   return out;
 }
 const cache=new Map();
 function floats(key){
   if(cache.has(key))return cache.get(key);
   const L=P.arrays[key];
-  const v=lift(decodeAt(L),L.w,L.h);
+  const v=lift(decodeAt(L),L);
   if(cache.size>14)cache.delete(cache.keys().next().value);
   cache.set(key,v); return v;
 }
@@ -970,11 +977,11 @@ vec2 direction(float value,int kind,float valid){
 }
 void main(){
   vec3 p=vec3(aPos.x, aPos.y*uExag, aPos.z);
-  vPos=p; vVal=aVal; vVal2=aVal2;
-  vOk  = aVal  > -1e29 ? 1.0 : 0.0;
-  vOk2 = aVal2 > -1e29 ? 1.0 : 0.0;
-  if(uAngleKind!=0 && (isnan(aVal)||isinf(aVal)))vOk=0.0;
-  if(uAngleKind2!=0 && (isnan(aVal2)||isinf(aVal2)))vOk2=0.0;
+  vPos=p;
+  vOk  = aVal  > -1e29 && !isnan(aVal) && !isinf(aVal) ? 1.0 : 0.0;
+  vOk2 = aVal2 > -1e29 && !isnan(aVal2) && !isinf(aVal2) ? 1.0 : 0.0;
+  // Interpolate finite contributions only, then normalize by their weight.
+  vVal=vOk>.5?aVal:0.0; vVal2=vOk2>.5?aVal2:0.0;
   vDirection=direction(aVal,uAngleKind,vOk);
   vDirection2=direction(aVal2,uAngleKind2,vOk2);
   gl_Position=uMVP*vec4(p,1.0);
@@ -984,6 +991,7 @@ precision highp float;
 in float vVal; in float vVal2; in float vOk; in float vOk2; in vec3 vPos;
 in vec2 vDirection; in vec2 vDirection2;
 uniform highp int uAngleKind,uAngleKind2;
+uniform int uMaskBinary,uMaskBinary2;
 uniform int uCmap,uCmap2,uReverse,uReverse2,uDiverging,uDiverging2;
 uniform float uLo,uHi,uLo2,uHi2,uOpacity;
 uniform int uCustomN,uCustomN2;
@@ -1068,16 +1076,25 @@ bool readAngle(vec2 direction,float valid,int kind,out float value){
   }
   return true;
 }
+/* 0 = continuous; 1 = preclassified 0/1 mask; 2 = -1/0/+1 mask transition.
+   The viewer applies the original fraction cutoff before uploading classes. */
+float maskClass(float value,int mode){
+  if(mode==1)return step(.5,value);
+  if(mode==2)return clamp(floor(value+.5),-1.0,1.0);
+  return value;
+}
 void main(){
   if(vOk<.5) discard;
-  float value=vVal;
+  float value=vVal/vOk;
   if(uAngleKind!=0 && !readAngle(vDirection,vOk,uAngleKind,value))discard;
+  if(uAngleKind==0)value=maskClass(value,uMaskBinary);
   float t1=clamp(nrm(value,uLo,uHi,uDiverging),0.,1.);
   if(uReverse==1)t1=1.-t1;
   vec3 col=uCmap==10?customPrimary(t1):builtinPick(uCmap,t1);
   if(uOpacity>.001 && vOk2>.5){
-    float value2=vVal2;
+    float value2=vVal2/vOk2;
     if(uAngleKind2==0 || readAngle(vDirection2,vOk2,uAngleKind2,value2)){
+      if(uAngleKind2==0)value2=maskClass(value2,uMaskBinary2);
       float t2=clamp(nrm(value2,uLo2,uHi2,uDiverging2),0.,1.);
       if(uReverse2==1)t2=1.-t2;
       col=mix(col,uCmap2==10?customOverlay(t2):builtinPick(uCmap2,t2),uOpacity);
@@ -1101,6 +1118,7 @@ if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInf
 gl.useProgram(prog);
 const U={};["uMVP","uExag","uCmap","uCmap2","uReverse","uReverse2",
   "uAngleKind","uAngleKind2",
+  "uMaskBinary","uMaskBinary2",
   "uDiverging","uDiverging2","uCustomN","uCustomN2",
   "uLo","uHi","uLo2","uHi2","uOpacity",
   "uSun","uRelief","uWire"].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
@@ -1235,7 +1253,7 @@ const PRODUCT_CMAP={
   elevation:"terrain",snow_depth:"blues",swe:"blues",veg_height:"greens",
   forest_cover_fraction:"greens",slope:"magma",aspect:"cyclic",
   amp:"gray",amp1:"gray",amp2:"gray",magnitude:"gray",
-  cor:"cividis",coherence_mask:"mask",wrapped_phase:"cyclic",
+  cor:"cividis",coherence_mask:"viridis",wrapped_phase:"cyclic",
   unw:"diverging",hgt:"diverging",local_incidence_angle:"cividis",
   incidence_angle_flat:"cividis",snow_density:"cividis"
 };
@@ -1267,13 +1285,21 @@ const layerRange=k=>{
     ?r:[L.lo,L.hi];
 };
 const rangeMode=k=>PREF.rangeModes[k]||(PREF.ranges[k]?"custom":"full");
-const RANGE_STATUS={full:"Full range · 100% of values",robust:"Robust 2–98% · 96% of values",
-  detail:"Detail 10–90% · 80% of values",custom:"Manual value range"};
+const RANGE_STATUS={full:"Colour stretch · full packed range",robust:"Colour stretch · 2nd–98th percentiles",
+  detail:"Colour stretch · 10th–90th percentiles",custom:"Colour stretch · manual limits"};
 function syncRangeStatus(k){
   if(!k||!$("rangeStateLabel"))return;
-  const mode=rangeMode(k);$("rangeStateLabel").textContent=RANGE_STATUS[mode]||RANGE_STATUS.custom;
-  $("rangeState").title=mode==="custom"?"Values limited with manual minimum and maximum":
-    "Displayed percentile interval for this layer";
+  const mode=rangeMode(k),r=PREF.ranges[k],sampled=mode==="robust"||mode==="detail";
+  const tied=sampled&&r&&r[0]===r[1];
+  let label=tied?RANGE_STATUS.full:RANGE_STATUS[mode]||RANGE_STATUS.custom;
+  if(sampled&&!tied&&isDiverging(k))label=label.replace(" · "," · symmetric from ");
+  $("rangeStateLabel").textContent=label;
+  $("rangeState").title=(sampled?
+    "Finite values in a regular sample of decoded, quantised export values after nearest-neighbour lifting to the terrain grid; not native archive percentiles. If no finite sample exists, full packed limits are used. "+
+    (tied?"Tied percentile limits use the full packed range. ":"")+
+    (isDiverging(k)?"Diverging limits are symmetric about zero. ":""):
+    mode==="custom"?"Manual minimum and maximum colour limits. ":"Full packed export limits. ")+
+    "Colour limits do not remove data or restore values clipped during export.";
 }
 const layerReverse=k=>PREF.reverse[k]?1:0;
 const hexRgb=h=>{const m=/^#?([0-9a-f]{6})$/i.exec(h||"");
@@ -1312,6 +1338,7 @@ function setPrimary(k,syncEditor=true){
   gl.uniform1i(U.uReverse,layerReverse(k));
   gl.uniform1i(U.uDiverging,isDiverging(k)?1:0);
   gl.uniform1i(U.uAngleKind,angularKind(k));
+  gl.uniform1i(U.uMaskBinary,0);
   applyCustomUniforms(k,false);
   gl.uniform1f(U.uLo,lo); gl.uniform1f(U.uHi,hi);
 
@@ -1339,7 +1366,7 @@ function setPrimary(k,syncEditor=true){
 function setOverlay(k){
   const on=k&&k!=="__none__"; ovKey=on?k:null;
   $("op").disabled=!on;
-  if(!on){gl.uniform1f(U.uOpacity,0);gl.uniform1i(U.uAngleKind2,0);syncPaletteSettings();draw();return;}
+  if(!on){gl.uniform1f(U.uOpacity,0);gl.uniform1i(U.uAngleKind2,0);gl.uniform1i(U.uMaskBinary2,0);syncPaletteSettings();draw();return;}
   const L=P.arrays[k];
   const cmap=layerCmap(k);
   const [lo,hi]=layerRange(k);
@@ -1349,6 +1376,7 @@ function setOverlay(k){
   gl.uniform1i(U.uReverse2,layerReverse(k));
   gl.uniform1i(U.uDiverging2,isDiverging(k)?1:0);
   gl.uniform1i(U.uAngleKind2,angularKind(k));
+  gl.uniform1i(U.uMaskBinary2,0);
   applyCustomUniforms(k,true);
   gl.uniform1f(U.uLo2,lo);gl.uniform1f(U.uHi2,hi);
   gl.uniform1f(U.uOpacity,+$("op").value/100);
@@ -1373,9 +1401,8 @@ function renderInfo(k){
   $("iName").textContent=L.label;
   $("iPath").textContent=k;
   $("iPath").title=k;
-  /* Two different denominators, deliberately. `valid` is measured against the
-     stored rectangle; `coverage` against the site's own footprint, which is
-     what makes the base DEM read 100% and lets a wider radar swath exceed it. */
+  /* `valid` uses the stored rectangle. Dividing by the DEM's finite fraction
+     gives a count ratio on the common archive grid, not spatial overlap. */
   const pct=100*L.valid/L.total;
   const denom=G.dem_valid_fraction||0;
   const cov=denom>0?(L.valid/L.total)/denom*100:NaN;
@@ -1392,7 +1419,7 @@ function renderInfo(k){
     kvRow("shown","<span id='iShown'>—</span>")+
     kvRow("valid"+info,"<b>"+pct.toFixed(1)+"%</b><div class='meter'><i style='width:"
       +pct.toFixed(1)+"%'></i></div>")+
-    kvRow("coverage","<b>"+covTxt+"</b><div class='meter'><i style='width:"
+    kvRow("valid-cell count relative to DEM","<b>"+covTxt+"</b><div class='meter'><i style='width:"
       +Math.min(100,isFinite(cov)?cov:0).toFixed(1)+"%'></i></div>");
   const hb=$("iHelp");
   if(hb)hb.onclick=e=>{e.stopPropagation();$("metricHelp").classList.toggle("on");};
@@ -1794,7 +1821,7 @@ function renderDetails(){
   if(mk.length){
     const rows=P.matches[mk[0]].length;
     h+="<div class='dsec' style='--dc:var(--match)'><h2>Lidar &times; UAVSAR pairing</h2>"+
-      "<div class='note'>"+rows+" candidate pairings evaluated at build time</div>"+
+      "<div class='note'>"+rows+" recorded matching rows; this table does not list every candidate considered</div>"+
       "<div class='wrap'><table class='grid'><thead><tr>"+
       mk.map(c=>"<th>"+esc(c)+"</th>").join("")+"</tr></thead><tbody>";
     for(let r=0;r<rows;r++)
@@ -1965,13 +1992,13 @@ function renderTimeline(){
     "<div class='note'>"+T.surveys.length+" lidar survey"+
     (T.surveys.length===1?"":"s")+" &middot; "+T.acquisitions.length+
     " radar acquisition"+(T.acquisitions.length===1?"":"s")+
-    " &middot; click a bar to open it</div></div>"+
+    " &middot; click a bar to open it. Lidar markers show survey starts; matching uses the closest interval endpoints.</div></div>"+
     "<div class='tlkey'>"+
       "<span><i style='width:14px;height:3px;background:var(--lidar)'></i>lidar snow depth</span>"+
       "<span><i style='width:14px;height:3px;background:var(--meta)'></i>lidar veg height</span>"+
       "<span><i style='width:14px;height:9px;background:var(--amp);border-radius:2px'></i>radar, matches snow depth</span>"+
       "<span><i style='width:14px;height:9px;background:rgba(242,169,59,.22);border:1px solid rgba(242,169,59,.5);border-radius:2px'></i>radar, no snow-depth match</span>"+
-      "<span><i style='width:14px;height:0;border-top:1px dashed var(--match)'></i>gap to matched survey</span>"+
+      "<span><i style='width:14px;height:0;border-top:1px dashed var(--match)'></i>connector to matched survey start</span>"+
     "</div>";
 
   years.forEach(yr=>{
@@ -2010,7 +2037,7 @@ function renderTimeline(){
          "' stroke='"+col+"' stroke-width='1.5' stroke-opacity='.85'/>";
       g+="<text x='"+(x+5).toFixed(1)+"' y='"+(TOP+i*15-8)+"' fill='"+col+
          "' font-size='10' font-family='IBM Plex Mono,monospace'>"+
-         sv.product+" "+isoOf(sv.date)+"</text>";
+         sv.product+" start "+isoOf(sv.date)+"</text>";
     });
 
     // one row per acquisition
@@ -2371,7 +2398,7 @@ function renderCustomEditor(){
   }
   if(cfg.mode==="binary"){
     const labels=productKind(primKey)==="coherence_mask"
-      ?[["Decorrelated","0 · below coherence threshold"],["Usable","1 · at or above threshold"]]
+      ?[["Low colour","0% of palette"],["High colour","100% of palette"]]
       :[["Off","0"],["On","1"]];
     host.innerHTML="<div class='le-custom-ramp' id='leCustomRamp'></div><div class='le-colors'>"+
       cfg.colors.map((c,i)=>"<div class='le-color-row binary'><button type='button' class='le-color-swatch' "+

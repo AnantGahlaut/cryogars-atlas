@@ -16,6 +16,9 @@ import math
 import re
 import struct
 from pathlib import Path
+from build_provenance import capture_sources
+
+_SOURCE_SNAPSHOT = capture_sources(__file__)
 
 
 PAYLOAD = re.compile(r'<script\b[^>]*\bid=["\']payload["\'][^>]*>(.*?)</script>', re.S)
